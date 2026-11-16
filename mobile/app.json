@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "CondoConnect",
+    "slug": "condoconnect-android",
+    "version": "2.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "condoconnect",
+    "platforms": [
+      "android"
+    ],
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F2A47"
+    },
+    "android": {
+      "package": "com.condoconnect.app",
+      "versionCode": 2,
+      "allowBackup": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#2563EB"
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+.netlify/
+uploads/
+storage/*.sqlite
+.env
+.env.*
+!.env.example
+*.env
+.local-tools/
+test-results/
+.netlify-public/
+

@@ -1,0 +1,163 @@
+:root {
+    --home-blue-900: #163d7a;
+    --home-blue-700: #1c5fcc;
+    --home-blue-500: #5d8ef5;
+    --home-blue-100: #edf4ff;
+    --home-soft: #f5f9ff;
+    --home-muted: #5a6572;
+    --home-border: rgba(22, 61, 122, 0.12);
+    --home-shadow: 0 20px 45px rgba(19, 53, 108, 0.10);
+}
+
+body.home-page {
+    background: linear-gradient(180deg, #f5f9ff 0%, #ffffff 100%);
+    color: #172433;
+}
+
+body.home-page .site-header {
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(22, 61, 122, 0.08);
+}
+
+body.home-page .brand strong {
+    color: var(--home-blue-900);
+}
+
+body.home-page .brand span {
+    color: var(--home-muted);
+}
+
+body.home-page .brand-mark {
+    background: linear-gradient(135deg, var(--home-blue-700), var(--home-blue-500));
+    box-shadow: 0 12px 24px rgba(28, 95, 204, 0.24);
+}
+
+body.home-page .main-nav a:hover {
+    color: var(--home-blue-700);
+}
+
+body.home-page .hero {
+    background: radial-gradient(circle at top left, rgba(93, 142, 245, 0.15), transparent 28%), linear-gradient(180deg, #f7faff 0%, #ffffff 100%);
+    padding-top: 88px;
+    padding-bottom: 82px;
+}
+
+body.home-page .eyebrow {
+    color: var(--home-blue-700);
+}
+
+body.home-page .hero h1,
+body.home-page .section-header h2,
+body.home-page .cta-card h2,
+body.home-page .service-card h3,
+body.home-page .step-card h3,
+body.home-page .benefit-card h3,
+body.home-page .content-card h3,
+body.home-page .testimonial-card strong {
+    color: var(--home-blue-900);
+}
+
+body.home-page .hero p,
+body.home-page .section-header p,
+body.home-page .service-card p,
+body.home-page .step-card p,
+body.home-page .benefit-card p,
+body.home-page .content-card p,
+body.home-page .testimonial-card p,
+body.home-page .site-footer,
+body.home-page .footer-copy {
+    color: var(--home-muted);
+}
+
+body.home-page .button-primary {
+    background: linear-gradient(135deg, var(--home-blue-700), var(--home-blue-500));
+    box-shadow: 0 14px 24px rgba(28, 95, 204, 0.22);
+}
+
+body.home-page .button-secondary {
+    background: var(--home-blue-100);
+    color: var(--home-blue-900);
+}
+
+body.home-page .hero-meta > div,
+body.home-page .hero-card,
+body.home-page .service-card,
+body.home-page .step-card,
+body.home-page .benefit-card,
+body.home-page .content-card,
+body.home-page .testimonial-card,
+body.home-page .site-footer,
+body.home-page .auth-card,
+body.home-page .form-card,
+body.home-page .stats-card,
+body.home-page .panel-card,
+body.home-page .card,
+body.home-page .feature-card,
+body.home-page .empty-state {
+    border: 1px solid var(--home-border);
+    box-shadow: var(--home-shadow);
+}
+
+body.home-page .hero-card .tag {
+    background: var(--home-blue-100);
+    color: var(--home-blue-700);
+}
+
+body.home-page .service-card .icon,
+body.home-page .feature-card .icon {
+    background: var(--home-blue-100);
+}
+
+body.home-page .icon-green { background: #eafaf3 !important; }
+body.home-page .icon-purple { background: #f2f5ff !important; }
+body.home-page .icon-gray { background: #eef3f6 !important; }
+body.home-page .icon-orange { background: #fff4e9 !important; }
+body.home-page .icon-red { background: #ffece9 !important; }
+body.home-page .icon-teal { background: #ebfbf5 !important; }
+
+body.home-page .section-header span,
+body.home-page .eyebrow,
+body.home-page .cta-card .eyebrow {
+    color: var(--home-blue-700);
+}
+
+body.home-page .cta-card {
+    background: linear-gradient(135deg, var(--home-blue-900), var(--home-blue-700));
+    box-shadow: 0 24px 48px rgba(22, 61, 122, 0.18);
+}
+
+body.home-page .site-footer {
+    background: rgba(247, 250, 255, 0.96);
+    border-top: 1px solid rgba(22, 61, 122, 0.08);
+}
+
+body.home-page .footer-brand span,
+body.home-page .brand-mark {
+    background: linear-gradient(135deg, var(--home-blue-700), var(--home-blue-500));
+    color: #fff;
+}
+
+body.home-page .footer-nav a:hover {
+    color: var(--home-blue-700);
+}
+
+@media (max-width: 760px) {
+    body.home-page .hero {
+        padding-top: 60px;
+    }
+
+    body.home-page .cta-card {
+        padding: 28px 22px;
+    }
+}
+
+@media (max-width: 640px) {
+    body.home-page .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    body.home-page .button {
+        width: 100%;
+    }
+}

@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- APK DE TESTE: libera HTTP sem criptografia somente para o servidor listado em res/xml/network_security_config.xml.
+       Quando o servidor tiver HTTPS, apague este arquivo, a pasta res/ ao lado e o arquivo mobile/.env. -->
+  <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

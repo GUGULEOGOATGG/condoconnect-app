@@ -1,0 +1,53 @@
+name: Android APK
+
+# Gera o APK do CondoConnect (pasta mobile/) sem precisar de computador com Android Studio.
+# No GitHub: aba Actions > "Android APK" > Run workflow. Ao terminar, baixe "condoconnect-apk" em Artifacts.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['mobile/**', 'api/mobile.php', '.github/workflows/android-apk.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Testes e APK de 64 bits
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      # A checagem de tipos avisa, mas não impede a geração do APK.
+      - run: npm run typecheck
+        continue-on-error: true
+      - name: Aceitar licenças do Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Compilar o APK
+        working-directory: mobile/android
+        # APK de teste: mesmos valores de mobile/.env. Remova os dois quando o servidor tiver HTTPS.
+        env:
+          EXPO_PUBLIC_API_BASE_URL: http://2.24.65.149:8080/sisc-test
+          EXPO_PUBLIC_ALLOW_HTTP: '1'
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: condoconnect-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

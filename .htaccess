@@ -1,0 +1,13 @@
+DirectoryIndex index.php
+Options -Indexes
+
+<FilesMatch "(?i)(^\.env(?:\..*)?$|\.env$)">
+    Require all denied
+</FilesMatch>
+
+# Source, archives and tools must never be served by the web server.
+<FilesMatch "(?i)\.(sql|rar|zip|phar|log|ini)$">
+    Require all denied
+</FilesMatch>
+RewriteEngine On
+RewriteRule ^(?:backend|tests|tools|docs|deploy|test-results|\.local-tools|\.git|\.github|\.agents|\.codex)(?:/|$) - [F,L,NC]

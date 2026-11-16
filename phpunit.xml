@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         cacheDirectory="test-results/phpunit-cache"
+         bootstrap="tests/bootstrap.php"
+         failOnWarning="true"
+         failOnRisky="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+            <file>tests/UtilitiesTest.php</file>
+            <file>tests/SecurityTest.php</file>
+            <file>tests/EnvironmentTest.php</file>
+            <file>tests/ApiTest.php</file>
+        </testsuite>
+        <testsuite name="Integration">
+            <file>tests/BusinessRulesTest.php</file>
+            <file>tests/MigrationTest.php</file>
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="API">
+            <file>tests/HttpFlowsTest.php</file>
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">api</directory>
+            <directory suffix=".php">backend</directory>
+        </include>
+    </source>
+    <coverage includeUncoveredFiles="true">
+        <report>
+            <clover outputFile="test-results/coverage.xml"/>
+            <html outputDirectory="test-results/coverage-html"/>
+            <text outputFile="test-results/coverage.txt" showUncoveredFiles="true"/>
+        </report>
+    </coverage>
+    <logging><junit outputFile="test-results/junit.xml"/></logging>
+</phpunit>

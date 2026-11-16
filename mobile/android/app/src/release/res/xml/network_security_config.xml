@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Somente este endereço pode ser acessado por HTTP; todo o restante continua exigindo HTTPS. -->
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">2.24.65.149</domain>
+  </domain-config>
+</network-security-config>
