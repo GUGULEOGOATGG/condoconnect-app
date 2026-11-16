@@ -1,15 +1,16 @@
 name: Android APK
 
 # Gera o APK do CondoConnect (pasta mobile/) sem precisar de computador com Android Studio.
-# No GitHub: aba Actions > "Android APK" > Run workflow. Ao terminar, baixe "condoconnect-apk" em Artifacts.
+# No GitHub: aba Actions > "Android APK" > Run workflow. Ao terminar, o APK fica em Releases > "CondoConnect APK de teste".
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths: ['mobile/**', 'api/mobile.php', '.github/workflows/android-apk.yml']
 
+# "write" só para publicar o APK em Releases.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   apk:
@@ -51,3 +52,12 @@ jobs:
           name: condoconnect-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+      - name: Publicar o APK em Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/CondoConnect-teste.apk"
+          gh release delete apk-teste --yes --cleanup-tag || true
+          gh release create apk-teste "$RUNNER_TEMP/CondoConnect-teste.apk" --target "$GITHUB_SHA" \
+            --title "CondoConnect APK de teste" \
+            --notes "APK de teste (Android 7+, 64 bits), ligado a http://2.24.65.149:8080/sisc-test. Conexão sem criptografia: não distribuir para moradores."
