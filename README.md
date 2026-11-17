@@ -177,6 +177,22 @@ Ela pode ser executada novamente. Aguarde `MIGRATION_OK` e recarregue o chat.
 O SQL de instalação contém `USE db_sisc`; para bancos com outro nome, ajuste
 o destino. Para atualizar um banco existente, use a migração incremental.
 
+## Conectar ao banco em um comando
+
+Se o site, o app web ou o APK mostram "O banco de dados está indisponível", rode no
+servidor, dentro da pasta do site:
+
+```bash
+cd /var/www/html/sisc-test
+php tools/configurar-banco.php
+```
+
+O script pergunta endereço, porta, nome do banco, usuário e senha do MySQL, testa a
+conexão e diz exatamente o que corrigir (senha errada, banco inexistente, usuário sem
+permissão, MySQL desligado, driver do PHP ausente). Só grava o `.env` quando a conexão
+funciona, guardando uma cópia do anterior. No fim, confere as tabelas e termina com
+`BANCO_OK`.
+
 ## Configuração e diagnóstico
 
 O `.env` é carregado também ao incluir diretamente as configurações do banco e
