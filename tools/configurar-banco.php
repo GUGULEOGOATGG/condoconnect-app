@@ -3,11 +3,13 @@ declare(strict_types=1);
 
 // Configura e testa a conexão do CondoConnect com o MySQL, em um só comando.
 // Uso, no servidor, dentro da pasta do site (ex.: cd /var/www/html/sisc-test):
-//   php tools/configurar-banco.php
-// Pergunta host, porta, banco, usuário e senha, testa a conexão, diz exatamente o que está
-// errado quando falha e, se der certo, grava o .env (guardando uma cópia do anterior).
+//   php tools/configurar-banco.php            pergunta os dados, testa, grava o .env e prepara as tabelas
+//   php tools/configurar-banco.php --testar   só testa o .env atual, sem perguntar nem gravar nada
+// Quando falha, diz exatamente o que está errado. Quando dá certo, grava o .env (guardando uma cópia
+// do anterior), oferece importar db_sisc.sql em um banco vazio e aplicar a migração da versão atual.
 // Somente linha de comando: a pasta tools/ é bloqueada na web e este arquivo recusa execução por HTTP.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+require_once dirname(__DIR__) . '/backend/database/schema_status.php';
 
 $root = dirname(__DIR__);
 $envPath = $root . '/.env';
@@ -22,6 +24,10 @@ function ask(string $label, string $default, bool $secret = false): string {
     if ($hide) { shell_exec('stty echo'); fwrite(STDOUT, PHP_EOL); }
     $line = $line === false ? '' : rtrim($line, "\r\n");
     return $line === '' ? $default : $line;
+}
+function confirm(string $question): bool {
+    fwrite(STDOUT, $question . ' [s/N]: ');
+    return in_array(strtolower(trim((string)fgets(STDIN))), ['s', 'sim', 'y', 'yes'], true);
 }
 function posix_isatty_safe(): bool { return function_exists('posix_isatty') ? posix_isatty(STDIN) : (function_exists('stream_isatty') && stream_isatty(STDIN)); }
 
@@ -75,9 +81,9 @@ function explainFailure(PDOException $e, array $c): string {
             . "  (se o MySQL estiver em outra máquina ou contêiner, troque 'localhost' pelo endereço de onde o PHP conecta, ou por '%')",
         $code === 1044 || $code === 1142 => "O usuário '{$c['user']}' existe, mas não tem permissão no banco '{$c['name']}'. Libere com:\n"
             . "  sudo mysql -e \"GRANT ALL PRIVILEGES ON `{$c['name']}`.* TO '{$c['user']}'@'localhost'; FLUSH PRIVILEGES;\"",
-        $code === 1049 => "O banco '{$c['name']}' não existe nesse servidor MySQL. Crie e importe as tabelas com:\n"
-            . "  mysql -h {$c['host']} -P {$c['port']} -u {$c['user']} -p < db_sisc.sql\n"
-            . "  (o arquivo cria o banco db_sisc; se o seu banco tiver outro nome, use DB_NAME=db_sisc ou ajuste o arquivo)",
+        $code === 1049 => "O banco '{$c['name']}' não existe nesse servidor MySQL. Crie o banco (as tabelas este comando importa depois):\n"
+            . "  sudo mysql -e \"CREATE DATABASE `{$c['name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON `{$c['name']}`.* TO '{$c['user']}'@'localhost'; FLUSH PRIVILEGES;\"\n"
+            . "  e rode este comando de novo.",
         in_array($code, [2002, 2003, 2005, 2006], true) => "Não há MySQL respondendo em {$c['host']}:{$c['port']}. Verifique:\n"
             . "  - se o MySQL está ligado:  sudo systemctl status mysql   (ou mariadb)\n"
             . "  - se o host está certo: no mesmo servidor use 127.0.0.1; com Docker, use o nome do serviço do banco no docker-compose\n"
@@ -87,6 +93,49 @@ function explainFailure(PDOException $e, array $c): string {
             . "  e rode este comando de novo usando o usuário condo.",
         default => 'O MySQL recusou a conexão (código ' . ($code ?: 'desconhecido') . '). Mensagem do driver: ' . $e->getMessage(),
     };
+}
+
+function connect(array $c): PDO {
+    $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_TIMEOUT => 8];
+    return new PDO("mysql:host={$c['host']};port={$c['port']};dbname={$c['name']};charset=utf8mb4", $c['user'], $c['password'], $options);
+}
+
+/** Confere as tabelas e a migração. Devolve 0 quando o banco está pronto para o site e os apps. */
+function reportSchema(PDO $pdo, array $c, string $root, bool $interactive): int {
+    $status = databaseSchemaStatus($pdo);
+    out();
+    if (count($status['missing_tables']) === count(APP_REQUIRED_TABLES)) {
+        out("O banco '{$c['name']}' está vazio: faltam as tabelas do CondoConnect.");
+        if (!$interactive || !confirm('Importar agora o arquivo db_sisc.sql neste banco? (não apaga nada)')) {
+            out('Importe uma vez com:');
+            out("  mysql -h {$c['host']} -P {$c['port']} -u {$c['user']} -p {$c['name']} < backend/database/db_sisc.sql");
+            out('e confira de novo com: php tools/configurar-banco.php --testar');
+            return 1;
+        }
+        $sql = file_get_contents($root . '/backend/database/db_sisc.sql');
+        if ($sql === false) { out('Não foi possível ler backend/database/db_sisc.sql.'); return 1; }
+        out('Importando as tabelas e os dados de exemplo...');
+        try { foreach (splitSqlStatements($sql) as $statement) $pdo->exec($statement); }
+        catch (PDOException $e) { out('A importação parou: ' . explainFailure($e, $c)); return 1; }
+        out('Tabelas importadas.');
+        $status = databaseSchemaStatus($pdo);
+    }
+    if ($status['missing_tables']) {
+        out('Faltam tabelas: ' . implode(', ', $status['missing_tables']) . '.');
+        out('Faça um backup (mysqldump) e atualize com: php backend/database/update_application.php');
+        return 1;
+    }
+    if (!$status['migrated']) {
+        out('As tabelas existem, mas a migração desta versão ainda não foi aplicada.');
+        if (!$interactive || !confirm('Aplicar agora? Só acrescenta colunas, índices e dados de exemplo; nada é apagado.')) {
+            out('Aplique com: php backend/database/update_application.php');
+            return 1;
+        }
+        passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/backend/database/update_application.php'), $exit);
+        if ($exit !== 0) { out('A migração falhou; veja a mensagem acima.'); return 1; }
+    }
+    out('Tabelas OK. Usuários cadastrados: ' . $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn());
+    return 0;
 }
 
 out('CondoConnect · configuração do banco de dados');
@@ -99,6 +148,18 @@ foreach (['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS', 'DB_DATABASE', 
 }
 
 $env = currentEnv($envPath);
+if (in_array('--testar', $argv, true)) {
+    if (!is_file($envPath)) fail('Ainda não existe .env. Rode sem --testar para criá-lo: php tools/configurar-banco.php');
+    $c = ['host' => pick($env, ['DB_HOST'], '127.0.0.1'), 'port' => pick($env, ['DB_PORT'], '3306'), 'name' => pick($env, ['DB_NAME', 'DB_DATABASE'], ''),
+        'user' => pick($env, ['DB_USER', 'DB_USERNAME'], ''), 'password' => pick($env, ['DB_PASS', 'DB_PASSWORD'], '')];
+    out("Testando o .env atual: usuário {$c['user']} em {$c['host']}:{$c['port']}, banco {$c['name']}");
+    try { $pdo = connect($c); } catch (PDOException $e) { fail(explainFailure($e, $c)); }
+    out('Conexão OK: MySQL ' . $pdo->query('SELECT VERSION()')->fetchColumn());
+    $result = reportSchema($pdo, $c, $root, false);
+    out($result === 0 ? 'BANCO_OK' : 'BANCO_INCOMPLETO');
+    exit($result);
+}
+
 out(is_file($envPath) ? 'Arquivo .env encontrado; os valores atuais aparecem entre colchetes.' : 'Ainda não existe .env; ele será criado.');
 out();
 $c = [
@@ -115,11 +176,10 @@ if ($c['name'] === '' || strlen($c['name']) > 64 || preg_match('/[;\s`]/', $c['n
 if ($c['user'] === '') fail('Informe o usuário do MySQL. Não use root: crie um usuário só para o site.');
 if (strtolower($c['user']) === 'root') out('Aviso: usar root no site não é recomendado. Funciona, mas crie um usuário próprio quando puder.');
 
-$options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_TIMEOUT => 8];
 out();
 out('Testando a conexão...');
 try {
-    $pdo = new PDO("mysql:host={$c['host']};port={$c['port']};dbname={$c['name']};charset=utf8mb4", $c['user'], $c['password'], $options);
+    $pdo = connect($c);
 } catch (PDOException $e) {
     fail(explainFailure($e, $c) . "\n\nNada foi gravado. Corrija e rode de novo: php tools/configurar-banco.php");
 }
@@ -133,31 +193,29 @@ $result = envWithDatabase($lines, $new);
 if (is_file($envPath)) {
     $backup = $envPath . '.bak-' . date('Ymd-His');
     if (!copy($envPath, $backup)) fail('Não foi possível guardar a cópia do .env atual. Nada foi alterado.');
+    @chmod($backup, fileperms($envPath) & 0777);
     out('Cópia do .env anterior: ' . basename($backup));
 }
 $temporary = $envPath . '.tmp-' . getmypid();
 if (file_put_contents($temporary, implode(PHP_EOL, $result) . PHP_EOL, LOCK_EX) === false) fail('Não foi possível gravar o .env nesta pasta. Rode com sudo.');
-if (is_file($envPath)) { @chmod($temporary, fileperms($envPath) & 0777); @chown($temporary, fileowner($envPath)); @chgrp($temporary, filegroup($envPath)); }
-else @chmod($temporary, 0644);
+if (is_file($envPath)) {
+    @chmod($temporary, fileperms($envPath) & 0777); @chown($temporary, fileowner($envPath)); @chgrp($temporary, filegroup($envPath));
+} elseif (function_exists('posix_geteuid') && posix_geteuid() === 0 && function_exists('posix_getgrnam') && posix_getgrnam('www-data')) {
+    // O .env guarda a senha do banco: só o dono (root) e o Apache (grupo www-data) conseguem ler.
+    @chgrp($temporary, 'www-data'); @chmod($temporary, 0640);
+} else {
+    @chmod($temporary, 0644);
+}
 if (!rename($temporary, $envPath)) { @unlink($temporary); fail('Não foi possível substituir o .env.'); }
 out('.env gravado.');
 
-// Confere se as tabelas do sistema existem.
-$tables = array_map('strtolower', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN));
-$missing = array_values(array_diff(['users', 'chamados', 'chats', 'condominios', 'comunicados', 'areas_comuns', 'reservas'], $tables));
-out();
-if (in_array('users', $missing, true)) {
-    out('O banco está vazio: faltam as tabelas do CondoConnect. Importe uma vez com:');
-    out("  mysql -h {$c['host']} -P {$c['port']} -u {$c['user']} -p {$c['name']} < db_sisc.sql");
-    out('Depois rode: php backend/database/update_application.php');
-    exit(1);
+// Confere as tabelas; em um banco vazio, oferece importar db_sisc.sql e aplicar a migração.
+$status = reportSchema($pdo, $c, $root, true);
+if ($status !== 0) exit($status);
+$appUrl = pick(currentEnv($envPath), ['APP_URL'], '');
+if ($appUrl === '' || str_contains($appUrl, 'localhost')) {
+    out('Lembrete: APP_URL no .env está "' . $appUrl . '". Troque pelo endereço público (ex.: http://2.24.65.149:8080) para os links enviados por e-mail funcionarem.');
 }
-if ($missing) {
-    out('Faltam tabelas de versões mais novas: ' . implode(', ', $missing) . '. Atualize com (faça backup antes):');
-    out('  php backend/database/update_application.php');
-    exit(1);
-}
-out('Usuários cadastrados: ' . $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn());
 out();
 out('BANCO_OK — o site, o app web e o APK usam esta mesma configuração.');
-out('Se o site ainda mostrar "banco indisponível", reinicie o Apache: sudo systemctl restart apache2');
+out('Reinicie o Apache para ele usar o .env novo: sudo systemctl restart apache2');

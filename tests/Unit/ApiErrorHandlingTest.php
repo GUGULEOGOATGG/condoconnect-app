@@ -12,7 +12,30 @@ final class ApiErrorHandlingTest extends TestCase
         foreach ([new DatabaseConfigurationException('PRIVATE configuration'), new DatabaseConnectionException('PRIVATE connection')] as $error) {
             [$status, $payload] = apiFailureResponse($error);
             self::assertSame(503, $status);
+            self::assertSame('database_unavailable', $payload['code']);
             self::assertStringNotContainsString('PRIVATE', $payload['error']);
+        }
+    }
+
+    public function testMissingTableOrColumnAsksForTheMigration(): void
+    {
+        $log = tempnam(sys_get_temp_dir(), 'sisc-api-error-');
+        $savedLog = ini_get('error_log');
+        ini_set('error_log', $log);
+        try {
+            foreach (['42S02', '42S22'] as $state) {
+                $error = new PDOException('SQLSTATE[' . $state . ']: PRIVATE table name');
+                $error->errorInfo = [$state, 1146, 'PRIVATE'];
+                (new ReflectionProperty(Exception::class, 'code'))->setValue($error, $state);
+                [$status, $payload] = apiFailureResponse($error);
+                self::assertSame(503, $status);
+                self::assertSame('database_outdated', $payload['code']);
+                self::assertStringContainsString('migração', $payload['error']);
+                self::assertStringNotContainsString('PRIVATE', $payload['error']);
+            }
+        } finally {
+            ini_set('error_log', $savedLog);
+            unlink($log);
         }
     }
 

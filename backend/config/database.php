@@ -8,4 +8,6 @@ return [
     'name' => getenv('DB_NAME') === false ? '' : getenv('DB_NAME'),
     'user' => getenv('DB_USER') === false ? '' : getenv('DB_USER'),
     'password' => getenv('DB_PASS') === false ? '' : getenv('DB_PASS'),
+    // Segundos de espera pela conexão com o MySQL (1 a 15; padrão 5).
+    'timeout' => getenv('DB_TIMEOUT') ?: '5',
 ];

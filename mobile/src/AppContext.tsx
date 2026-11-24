@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { ApiClient, ApiError } from './api';
-import { addDemoReservation, addDemoTicket, createDemoData, createDemoMessages, demoProviders } from './demo';
+import { ApiClient, ApiError, testConnection } from './api';
+import type { ConnectionReport } from './api';
 import type { AdminOverview, AdminUser, Bootstrap, CommunityInput, LoginResult, Message, NewReservation, NewTicket, NoticeInput, Provider, Registration, User } from './types';
 import { normalizeServerUrl } from './domain';
 
 type AppContextValue = {
-  data: Bootstrap | null; mode: 'demo' | 'live' | null; serverUrl: string; starting: boolean;
+  data: Bootstrap | null; mode: 'live' | null; serverUrl: string; starting: boolean;
   refreshing: boolean; error: string; clearError: () => void;
-  configure: (url: string) => Promise<void>; login: (email: string, password: string, code?: string) => Promise<boolean>;
+  configure: (url: string) => Promise<void>; checkConnection: (url?: string) => Promise<ConnectionReport>; login: (email: string, password: string, code?: string) => Promise<boolean>;
   register: (values: Registration) => Promise<void>; forgotPassword: (email: string) => Promise<string>;
-  startDemo: () => void; logout: () => Promise<void>; refresh: () => Promise<void>;
+  logout: () => Promise<void>; refresh: () => Promise<void>;
   createTicket: (input: NewTicket) => Promise<void>; changeTicket: (id: number, status: string) => Promise<void>;
   acceptTicket: (id: number) => Promise<number>; providers: (query: string) => Promise<Provider[]>;
   openChat: (contact: number) => Promise<number>; messages: (id: number) => Promise<Message[]>;
@@ -27,11 +27,10 @@ const Context = createContext<AppContextValue | null>(null);
 const SESSION_KEY = 'condoconnect.session.v1', SERVER_KEY = 'condoconnect.server.v1';
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Bootstrap | null>(null);
-  const [mode, setMode] = useState<'demo' | 'live' | null>(null);
+  const [mode, setMode] = useState<'live' | null>(null);
   const [serverUrl, setServerUrl] = useState('');
   const [starting, setStarting] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState('');
   const client = useRef<ApiClient | null>(null), generation = useRef(0);
-  const demoMessages = useRef<Record<number, Message[]>>({});
   const refreshInFlight = useRef<Promise<void> | null>(null);
   // Condomínio escolhido pela administração; 0 usa o da própria conta.
   const condominio = useRef(0);
@@ -109,6 +108,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (result.mobile_api !== 1) throw new Error('Esta instalação ainda não tem a API do aplicativo.');
       await SecureStore.setItemAsync(SERVER_KEY, url); setServerUrl(url);
     },
+    checkConnection: async url => {
+      const target = (url ?? serverUrl).trim();
+      if (!target) throw new Error('Informe o endereço do servidor em “Conectar ao meu condomínio”.');
+      return testConnection(target);
+    },
     login: async (email, senha, codigo = '') => {
       const attempt = generation.current;
       const connection = publicApi();
@@ -124,10 +128,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!result.verification_sent) setError('Sua conta foi criada, mas o e-mail de confirmação não foi enviado. Toque em reenviar confirmação.');
     },
     forgotPassword: async email => (await publicApi().request<{ message: string }>('forgot_password', { email })).message,
-    startDemo: () => {
-      generation.current++; client.current = null; condominio.current = 0; demoMessages.current = { 1: createDemoMessages(1) };
-      setData(createDemoData()); setMode('demo'); setError('');
-    },
     logout: async () => {
       const connection = client.current;
       // Always clear this device even if a connection is unavailable.
@@ -136,57 +136,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (connection) await connection.request('logout', {}).catch(() => {});
     },
     createTicket: async input => {
-      if (mode === 'demo') { if (data) setData(addDemoTicket(data, input)); return; }
       await mutate('create_ticket', { ...input });
     },
     changeTicket: async (id, status) => {
-      if (mode === 'demo') { setData(current => current ? { ...current, tickets: current.tickets.map(t => Number(t.id) === id ? { ...t, status: status as any } : t) } : current); return; }
       await mutate('ticket_status', { id, status });
     },
     acceptTicket: async id => (await mutate<{ chat_id: number }>('accept_ticket', { id })).chat_id,
-    providers: async q => mode === 'demo' ? demoProviders.filter(p => `${p.nome} ${p.especialidades}`.toLocaleLowerCase('pt-BR').includes(q.toLocaleLowerCase('pt-BR'))) : (await api().request<{ providers: Provider[] }>('providers', undefined, { q })).providers,
-    openChat: async contact => {
-      if (mode !== 'demo') return (await mutate<{ chat_id: number }>('open_chat', { usuario_id: contact })).chat_id;
-      const existing = data?.chats.find(c => Number(c.contato_id) === contact);
-      if (existing) return Number(existing.id);
-      const person = data?.contacts.find(c => Number(c.id) === contact);
-      if (!person || !data) throw new Error('Contato indisponível.');
-      const id = Math.max(0, ...data.chats.map(c => Number(c.id))) + 1;
-      setData(current => current ? { ...current, chats: [{ id, contato_id: contact, contato_nome: person.nome, contato_tipo: person.tipo_usuario, ultimo_resumo: '', nao_lidas: 0, updated_at: new Date().toISOString() }, ...current.chats] } : current);
-      return id;
-    },
-    messages: async id => {
-      if (mode !== 'demo') return (await api().request<{ messages: Message[] }>('messages', undefined, { chat_id: String(id) })).messages;
-      setData(current => current ? { ...current, chats: current.chats.map(c => Number(c.id) === id && Number(c.nao_lidas) > 0 ? { ...c, nao_lidas: 0 } : c) } : current);
-      return demoMessages.current[id] || [];
-    },
+    providers: async q => (await api().request<{ providers: Provider[] }>('providers', undefined, { q })).providers,
+    openChat: async contact => (await mutate<{ chat_id: number }>('open_chat', { usuario_id: contact })).chat_id,
+    messages: async id => (await api().request<{ messages: Message[] }>('messages', undefined, { chat_id: String(id) })).messages,
     sendMessage: async (id, mensagem) => {
       if (!mensagem.trim() || mensagem.length > 4000) throw new Error('Escreva uma mensagem de até 4.000 caracteres.');
-      if (mode !== 'demo') { await api().request('send_message', { chat_id: id, mensagem }); return; }
-      if (!data) return;
-      const existing = demoMessages.current[id] || [];
-      demoMessages.current[id] = [...existing, { id: Math.max(0, ...existing.map(m => m.id)) + 1, chat_id: id, remetente_id: data.user.id, remetente_nome: data.user.nome, mensagem: mensagem.trim(), created_at: new Date().toISOString(), lida_por_todos: 0 }];
-      setData(current => current ? { ...current, chats: current.chats.map(c => Number(c.id) === id ? { ...c, ultimo_resumo: mensagem.trim(), updated_at: new Date().toISOString() } : c) } : current);
+      await api().request('send_message', { chat_id: id, mensagem });
     },
     reserve: async input => {
-      if (mode === 'demo') { if (data) setData(addDemoReservation(data, input)); return; }
       await mutate('reserve', { ...input });
     },
     cancelReservation: async id => {
-      if (mode === 'demo') { setData(current => current ? { ...current, reservations: current.reservations.map(r => Number(r.id) === id ? { ...r, status: 'cancelada' } : r) } : current); return; }
       await mutate('cancel_reservation', { id });
     },
     readNotice: async id => {
-      if (mode === 'demo') { setData(current => current ? { ...current, notices: current.notices.map(n => Number(n.id) === id ? { ...n, lido_em: new Date().toISOString() } : n) } : current); return; }
       await mutate('read_notice', { id });
     },
     readNotification: async id => {
-      if (mode === 'demo') { setData(current => current ? { ...current, notifications: current.notifications.map(n => !id || Number(n.id) === id ? { ...n, lida: 1 } : n) } : current); return; }
       await mutate('read_notification', { id });
     },
     saveProfile: async (nome, telefone) => {
       if (!nome.trim() || !/^\d{10,11}$/.test(telefone.replace(/\D/g, ''))) throw new Error('Informe seu nome e um telefone com DDD.');
-      if (mode === 'demo') { setData(current => current ? { ...current, user: { ...current.user, nome: nome.trim(), telefone } } : current); return; }
       await mutate('profile', { nome: nome.trim(), telefone });
     },
     resendVerification: async () => (await api().request<{ message: string }>('resend_verification', {})).message,

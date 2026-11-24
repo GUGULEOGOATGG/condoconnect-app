@@ -36,11 +36,21 @@ jobs:
           php-version: '8.3'
           extensions: pdo_mysql, mbstring, fileinfo, curl, openssl, dom
           coverage: xdebug
+          # O xdebug desliga o JIT do opcache e o PHP avisa "JIT is incompatible with third party
+          # extensions" em cada processo. O aviso caía no log do servidor PHP dos testes HTTP e
+          # reprovava o phpunit. O JIT não é usado nos testes: fica desligado aqui (e nos
+          # processos filhos, que leem o mesmo php.ini). O xdebug continua medindo a cobertura.
+          ini-values: opcache.jit=disable, opcache.jit_buffer_size=0
           tools: phpunit:10.5
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+      - name: Conferir que o PHP inicia sem avisos
+        run: |
+          php -v
+          startup="$(php -r '' 2>&1)"
+          if [ -n "$startup" ]; then echo "O PHP imprimiu avisos ao iniciar:"; echo "$startup"; exit 1; fi
       - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run test:coverage

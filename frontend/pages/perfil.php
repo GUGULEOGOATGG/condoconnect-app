@@ -141,8 +141,9 @@ $servicos = array_filter(array_map('trim', preg_split('/[,;\n]+/', (string) ($pr
             <section class="panel-card profile-section">
                 <h3>Portfólio</h3>
                 <div class="profile-portfolio">
-                    <?php foreach ($portfolio as $item): ?>
-                        <?php $path = getBasePath() . 'backend/storage/perfil/' . sanitize((string) $item); ?>
+                    <?php foreach (array_keys($portfolio) as $index): ?>
+                        <?php // backend/ é bloqueada na web: a imagem passa por api/documento.php, que confere a permissão. ?>
+                        <?php $path = getBasePath() . 'api/documento.php?tipo=portfolio&amp;id=' . (int) $profileUser['id'] . '&amp;n=' . (int) $index; ?>
                         <img src="<?= $path ?>" alt="Portfolio">
                     <?php endforeach; ?>
                 </div>

@@ -53,13 +53,14 @@ $notice = (string)($_SESSION['syndic_notice'] ?? ''); unset($_SESSION['syndic_no
                                 <td data-label="Unidade"><?= sanitize($item['unidade']) ?></td>
                                 <td data-label="Certificado">
                                     <?php if (!empty($item['documento_certificado'])): ?>
-                                        <a href="<?= getBasePath() ?>backend/storage/certificados/<?= sanitize($item['documento_certificado']) ?>" target="_blank" rel="noopener">Visualizar</a>
+                                        <a href="<?= getBasePath() ?>api/documento.php?tipo=certificado&amp;id=<?= (int) $item['id'] ?>" target="_blank" rel="noopener">Visualizar</a>
                                     <?php else: ?>
                                         <span>Não enviado</span>
                                     <?php endif; ?>
                                 </td>
                                 <td data-label="Ação">
                                     <form method="post" class="inline-actions">
+                                        <?= csrfField() ?>
                                         <input type="hidden" name="user_id" value="<?= (int) $item['id'] ?>">
                                         <button type="submit" name="status" value="aprovado" class="button button-primary">Aprovar</button>
                                         <button type="submit" name="status" value="rejeitado" class="button button-secondary">Rejeitar</button>

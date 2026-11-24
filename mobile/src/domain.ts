@@ -52,9 +52,15 @@ export function validateReservation(input: NewReservation, now = new Date()): st
 }
 /** HTTP só é aceito em um APK de teste gerado com EXPO_PUBLIC_ALLOW_HTTP=1 (veja mobile/.env). */
 export const allowsInsecureHttp = process.env.EXPO_PUBLIC_ALLOW_HTTP === '1';
+/** Únicos servidores liberados em HTTP. Igual a android/app/src/release/res/xml/network_security_config.xml. */
+export const insecureHttpHosts = ['2.24.65.149'];
+export function isInsecureUrl(url: string): boolean { return /^http:\/\//i.test(url.trim()); }
 export function normalizeServerUrl(input: string, allowHttp = allowsInsecureHttp): string {
   let url: URL;
   try { url = new URL(input.trim()); } catch { throw new Error('Informe o endereço HTTPS do seu site.'); }
+  if (allowHttp && url.protocol === 'http:' && !insecureHttpHosts.includes(url.hostname)) {
+    throw new Error(`Neste APK de teste, HTTP só é liberado para ${insecureHttpHosts.join(', ')}. Para outro servidor, use HTTPS.`);
+  }
   if ((url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) || !url.hostname || url.username || url.password || url.search || url.hash) {
     throw new Error('Use um endereço HTTPS, sem senha, parâmetros ou fragmentos.');
   }

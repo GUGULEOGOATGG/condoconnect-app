@@ -8,8 +8,12 @@ set_exception_handler(static function(Throwable $e): void {
 /** Expected input conflicts remain client errors; unexpected failures are logged. */
 function apiFailureResponse(Throwable $error): array
 {
+    // "code" lets the apps tell "banco indisponível" apart from other server errors.
     if ($error instanceof DatabaseConfigurationException || $error instanceof DatabaseConnectionException) {
-        return [503, ['error' => friendlyError($error)]];
+        return [503, ['error' => friendlyError($error), 'code' => 'database_unavailable']];
+    }
+    if ($error instanceof PDOException && in_array((string)$error->getCode(), ['42S02', '42S22'], true)) {
+        return [503, ['error' => friendlyError($error), 'code' => 'database_outdated']];
     }
     if ($error instanceof PDOException) {
         $driverCode = (int) ($error->errorInfo[1] ?? 0);

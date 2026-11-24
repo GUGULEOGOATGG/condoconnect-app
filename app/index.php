@@ -10,7 +10,7 @@ header('Referrer-Policy: no-referrer');
 header('X-Frame-Options: DENY');
 header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     . "connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
-$version = '2.0.0';
+$version = '2.1.0';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">

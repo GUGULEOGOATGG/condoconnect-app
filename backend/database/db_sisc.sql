@@ -1,8 +1,8 @@
 -- CondoConnect: banco da aplicação PHP principal (não da versão alternativa).
 -- MySQL 8 / MariaDB 10.6+. UTF-8 completo. Não apaga bancos ou registros.
--- Importe com um usuário autorizado a criar banco/tabelas.
-CREATE DATABASE IF NOT EXISTS db_sisc CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE db_sisc;
+-- Importe dentro do banco já criado, com o mesmo nome de DB_NAME no .env:
+--   mysql -u condo -p db_sisc < db_sisc.sql
+-- Pode ser importado de novo sem erro: tabelas e dados de exemplo só são criados se faltarem.
 
 CREATE TABLE IF NOT EXISTS users (
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -328,8 +328,23 @@ CREATE TABLE IF NOT EXISTS chamado_propostas (
  CHECK (orcamento_valor IS NULL OR orcamento_valor > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE users ADD CONSTRAINT fk_users_condominio FOREIGN KEY (condominio_id) REFERENCES condominios(id), ADD CONSTRAINT fk_users_unidade FOREIGN KEY (unidade_id,condominio_id) REFERENCES unidades(id,condominio_id);
-ALTER TABLE notificacoes ADD CONSTRAINT fk_notice_ticket FOREIGN KEY (chamado_id) REFERENCES chamados(id) ON DELETE SET NULL, ADD CONSTRAINT fk_notice_chat FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL;
+-- Chaves estrangeiras entre tabelas criadas acima; cada uma só é adicionada se ainda não existir.
+SET @sisc_sql = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE users ADD CONSTRAINT fk_users_condominio FOREIGN KEY (condominio_id) REFERENCES condominios(id)', 'DO 0') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND CONSTRAINT_NAME = 'fk_users_condominio' AND CONSTRAINT_TYPE = 'FOREIGN KEY');
+PREPARE sisc_stmt FROM @sisc_sql;
+EXECUTE sisc_stmt;
+DEALLOCATE PREPARE sisc_stmt;
+SET @sisc_sql = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE users ADD CONSTRAINT fk_users_unidade FOREIGN KEY (unidade_id,condominio_id) REFERENCES unidades(id,condominio_id)', 'DO 0') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND CONSTRAINT_NAME = 'fk_users_unidade' AND CONSTRAINT_TYPE = 'FOREIGN KEY');
+PREPARE sisc_stmt FROM @sisc_sql;
+EXECUTE sisc_stmt;
+DEALLOCATE PREPARE sisc_stmt;
+SET @sisc_sql = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE notificacoes ADD CONSTRAINT fk_notice_ticket FOREIGN KEY (chamado_id) REFERENCES chamados(id) ON DELETE SET NULL', 'DO 0') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'notificacoes' AND CONSTRAINT_NAME = 'fk_notice_ticket' AND CONSTRAINT_TYPE = 'FOREIGN KEY');
+PREPARE sisc_stmt FROM @sisc_sql;
+EXECUTE sisc_stmt;
+DEALLOCATE PREPARE sisc_stmt;
+SET @sisc_sql = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE notificacoes ADD CONSTRAINT fk_notice_chat FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL', 'DO 0') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'notificacoes' AND CONSTRAINT_NAME = 'fk_notice_chat' AND CONSTRAINT_TYPE = 'FOREIGN KEY');
+PREPARE sisc_stmt FROM @sisc_sql;
+EXECUTE sisc_stmt;
+DEALLOCATE PREPARE sisc_stmt;
 
 -- DEMO DATA: perfis fictícios, domínio reservado example.test.
 -- Senha de demonstração: DemoCondo@2026!

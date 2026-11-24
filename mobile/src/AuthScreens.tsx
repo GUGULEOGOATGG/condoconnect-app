@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, BackHandler, ImageBackground, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp } from './AppContext';
+import type { ConnectionReport } from './api';
+import { allowsInsecureHttp, insecureHttpHosts, isInsecureUrl } from './domain';
 import { Body, Button, Card, Chips, colors, Field, Icon, IconButton, Label, PasswordField, s, Screen, Title, useAction } from './ui';
 import type { Registration } from './types';
 
@@ -24,7 +26,7 @@ export function AuthScreens() {
         <View style={a.heroShade}><View style={a.heroPill}><View style={a.dot} /><Text style={a.heroPillText}>MAIS PERTO. MAIS SIMPLES.</Text></View><Text style={a.heroTitle}>Seu condomínio.{ '\n' }Na palma{ '\n' }da mão.</Text><Text style={a.heroText}>Mais conexão. Mais tempo para viver bem.</Text></View>
       </ImageBackground>
       <View style={{ gap: 8 }}><Label>Viver bem começa aqui</Label><Text style={[s.cardTitle, { fontSize: 23, lineHeight: 30 }]}>Tudo o que importa,{ '\n' }bem perto de você.</Text><Body>Abra chamados, converse com a comunidade e reserve os espaços do seu condomínio.</Body></View>
-      <View style={{ gap: 12 }}><Button title="Entrar na minha conta" icon="arrow-forward" onPress={() => setStep(app.serverUrl ? 'login' : 'setup')} /><Button title="Explorar demonstração" secondary icon="sparkles-outline" onPress={app.startDemo} /><Text style={a.hint}>A demonstração usa dados fictícios e funciona sem servidor.</Text></View>
+      <View style={{ gap: 12 }}><Button title="Entrar na minha conta" icon="arrow-forward" onPress={() => setStep(app.serverUrl ? 'login' : 'setup')} /></View>
       <Pressable onPress={() => setStep('setup')} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}><Text style={a.link}>{app.serverUrl ? 'Alterar o endereço do condomínio' : 'Conectar ao meu condomínio'}</Text></Pressable>
     </Screen> : step === 'setup' ? <Setup onDone={() => setStep('login')} /> : step === 'login' ? <Login onRegister={() => setStep('register')} onForgot={() => setStep('forgot')} onSetup={() => setStep('setup')} /> : step === 'register' ? <Register /> : <Forgot />}
   </View>;
@@ -32,7 +34,7 @@ export function AuthScreens() {
 function Setup({ onDone }: { onDone: () => void }) {
   const app = useApp(), action = useAction();
   const [url, setUrl] = useState(app.serverUrl);
-  return <Screen><View style={{ gap: 10 }}><View style={s.iconTile}><Icon name="link-outline" size={26} /></View><Label>Seu espaço</Label><Title>Vamos conectar{ '\n' }seu condomínio.</Title><Body>Informe o endereço usado para acessar o CondoConnect. A administração do condomínio pode fornecer esse endereço.</Body></View><Card><Field label="Endereço do condomínio" value={url} onChangeText={setUrl} autoCapitalize="none" keyboardType="url" autoCorrect={false} placeholder="https://seu-condominio.com.br" /><Body style={{ fontSize: 12 }}>Se o sistema estiver em uma subpasta, inclua-a no endereço. A conexão precisa usar HTTPS.</Body><Button title="Verificar e conectar" loading={action.busy} icon="checkmark-circle-outline" onPress={() => action.run(async () => { await app.configure(url); onDone(); })} /></Card><Body>Você também pode voltar e explorar a demonstração enquanto o servidor é configurado.</Body></Screen>;
+  return <Screen><View style={{ gap: 10 }}><View style={s.iconTile}><Icon name="link-outline" size={26} /></View><Label>Seu espaço</Label><Title>Vamos conectar{ '\n' }seu condomínio.</Title><Body>Informe o endereço usado para acessar o CondoConnect. A administração do condomínio pode fornecer esse endereço.</Body></View><Card><Field label="Endereço do condomínio" value={url} onChangeText={setUrl} autoCapitalize="none" keyboardType="url" autoCorrect={false} placeholder="https://seu-condominio.com.br" /><Body style={{ fontSize: 12 }}>Se o sistema estiver em uma subpasta, inclua-a no endereço. {allowsInsecureHttp ? `Use HTTPS; este APK de teste também aceita HTTP para ${insecureHttpHosts.join(', ')}.` : 'A conexão precisa usar HTTPS.'}</Body><InsecureNotice url={url} /><Button title="Verificar e conectar" loading={action.busy} icon="checkmark-circle-outline" onPress={() => action.run(async () => { await app.configure(url); onDone(); })} /></Card><ConnectionCheck url={url} /></Screen>;
 }
 function Login({ onRegister, onForgot, onSetup }: { onRegister: () => void; onForgot: () => void; onSetup: () => void }) {
   const app = useApp(), action = useAction();
@@ -46,7 +48,31 @@ function Login({ onRegister, onForgot, onSetup }: { onRegister: () => void; onFo
       if (done) { setPassword(''); setCode(''); } else setRequiresCode(true);
     })} />
     {requiresCode ? <Button title="Voltar ao login" secondary onPress={() => { setRequiresCode(false); setCode(''); setPassword(''); }} /> : <Pressable style={a.textButton} onPress={onForgot} accessibilityRole="button"><Text style={a.link}>Esqueci minha senha</Text></Pressable>}
-  </Card><Button title="Ainda não tenho uma conta" secondary onPress={onRegister} /><View style={[s.row, { justifyContent: 'center' }]}><Icon name="shield-checkmark-outline" size={16} /><Text style={a.hint}>Sua conexão com o condomínio é protegida.</Text></View><Pressable accessibilityRole="button" style={a.textButton} onPress={onSetup}><Text style={a.link}>Alterar endereço do condomínio</Text></Pressable></Screen>;
+  </Card><Button title="Ainda não tenho uma conta" secondary onPress={onRegister} />{isInsecureUrl(app.serverUrl) ? <InsecureNotice url={app.serverUrl} /> : <View style={[s.row, { justifyContent: 'center' }]}><Icon name="shield-checkmark-outline" size={16} /><Text style={a.hint}>Sua conexão com o condomínio é protegida (HTTPS).</Text></View>}<ConnectionCheck /><Pressable accessibilityRole="button" style={a.textButton} onPress={onSetup}><Text style={a.link}>Alterar endereço do condomínio</Text></Pressable></Screen>;
+}
+/** Aviso fixo sempre que o endereço usa HTTP: a senha e os dados trafegam sem criptografia. */
+function InsecureNotice({ url }: { url: string }) {
+  if (!isInsecureUrl(url)) return null;
+  return <View style={a.warn} accessibilityRole="alert"><Icon name="warning-outline" size={18} color="#92400E" /><Text style={a.warnText}>Conexão de teste sem criptografia (HTTP): a senha e os dados trafegam abertos pela rede. Use somente contas de teste.</Text></View>;
+}
+/** Botão “Testar conexão”: chama ping e health e mostra em que etapa a conexão para. */
+function ConnectionCheck({ url }: { url?: string }) {
+  const app = useApp();
+  const [busy, setBusy] = useState(false), [report, setReport] = useState<ConnectionReport | null>(null), [failure, setFailure] = useState('');
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setFailure(''); setReport(null);
+    try { setReport(await app.checkConnection(url)); } catch (error) { setFailure((error as Error).message); } finally { setBusy(false); }
+  };
+  return <Card>
+    <Button title="Testar conexão" secondary icon="pulse-outline" loading={busy} onPress={run} />
+    {!!failure && <Text style={a.stepDetail}>{failure}</Text>}
+    {report && <View style={{ gap: 10 }} accessibilityLiveRegion="polite">
+      <Text style={[a.reportTitle, { color: report.ok ? colors.green : '#92400E' }]}>{report.summary}</Text>
+      {report.steps.map(step => <View key={step.label} style={a.step}><Icon name={step.ok ? 'checkmark-circle' : 'close-circle'} size={18} color={step.ok ? colors.green : '#B91C1C'} /><View style={{ flex: 1 }}><Text style={a.stepLabel}>{step.label}</Text><Text style={a.stepDetail}>{step.detail}</Text></View></View>)}
+      <Text style={a.hint}>Tempo total do teste: {(report.elapsedMs / 1000).toFixed(1)} s</Text>
+    </View>}
+  </Card>;
 }
 function Register() {
   const app = useApp(), action = useAction();
@@ -77,4 +103,10 @@ const a = StyleSheet.create({
   hint: { color: colors.muted, fontSize: 11, textAlign: 'center', lineHeight: 17, flexShrink: 1 },
   link: { color: colors.primary, fontWeight: '600', fontSize: 13, textAlign: 'center' },
   textButton: { minHeight: 48, justifyContent: 'center' },
+  warn: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: '#FFF4DA', borderColor: '#F4D997', borderWidth: 1, borderRadius: 14, padding: 12 },
+  warnText: { flex: 1, color: '#92400E', fontSize: 12, lineHeight: 18 },
+  reportTitle: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  step: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  stepLabel: { color: colors.navy, fontSize: 13, fontWeight: '700' },
+  stepDetail: { color: colors.muted, fontSize: 12, lineHeight: 18 },
 });

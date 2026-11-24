@@ -180,6 +180,10 @@ final class HttpFlowsTest extends HttpTestCase
             $user = findUserById($r); self::assertNotEmpty($user['avatar']); $savedFiles[] = dirname(__DIR__) . '/backend/storage/perfil/' . $user['avatar'];
             foreach (json_decode($user['portfolio_imagens'], true) as $name) $savedFiles[] = dirname(__DIR__) . '/backend/storage/perfil/' . $name;
             $response = $this->request('/api/avatar.php?id=' . $r); self::assertSame(200, $response['status']); self::assertStringContainsString('image/png', $response['headers']);
+            // O portfólio sai por api/documento.php: backend/storage é bloqueada na web.
+            $profile = $this->request('/pages/perfil.php'); self::assertStringContainsString('api/documento.php?tipo=portfolio&amp;id=' . $r . '&amp;n=0', $profile['body']); self::assertStringNotContainsString('backend/storage', $profile['body']);
+            $response = $this->request('/api/documento.php?tipo=portfolio&id=' . $r . '&n=0'); self::assertSame(200, $response['status']); self::assertSame(file_get_contents($file), $response['body']);
+            self::assertSame(404, $this->request('/api/documento.php?tipo=portfolio&id=' . $r . '&n=5')['status']);
             $ticket = ['csrf' => $this->csrf, 'categoria' => 'Hidráulica', 'titulo' => 'Vazamento', 'descricao' => 'Teste', 'local_problema' => 'Cozinha', 'prioridade' => 'Média', 'data_servico' => date('Y-m-d', strtotime('+2 days')), 'anexo' => new CURLFile($file, 'image/png', 'anexo.png')];
             self::assertSame(302, $this->request('/pages/novo-chamado.php', 'POST', $ticket)['status']);
             $attachment = dbRow('SELECT * FROM anexos ORDER BY id DESC LIMIT 1'); $savedFiles[] = dirname(__DIR__) . '/backend/storage/uploads/' . $attachment['arquivo'];

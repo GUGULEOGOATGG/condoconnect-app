@@ -29,7 +29,6 @@ export function ChatScreen({ id }: { id: number }) {
     return () => { active.current = false; clearInterval(timer); listener.remove(); };
   }, [id]);
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior="height">
-    {app.mode === 'demo' && <Text style={c.demoNote}>Mensagens de exemplo. O envio é simulado neste aparelho.</Text>}
     {error && <Pressable onPress={fetchMessages} accessibilityRole="button" style={c.error}><Text style={{ color: colors.red, fontSize: 12 }}>{error} Toque para tentar novamente.</Text></Pressable>}
     {loading ? <ActivityIndicator style={{ flex: 1 }} color={colors.primary} /> : <FlatList ref={list} data={messages} keyExtractor={message => String(message.id)} contentContainerStyle={c.messages} showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled" onScroll={event => { const e = event.nativeEvent; atBottom.current = e.contentOffset.y + e.layoutMeasurement.height >= e.contentSize.height - 80; }} scrollEventThrottle={100}
@@ -47,7 +46,6 @@ export function ChatScreen({ id }: { id: number }) {
 const c = StyleSheet.create({
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#DCE9FF', alignItems: 'center', justifyContent: 'center' }, initial: { fontSize: 21, color: colors.primary, fontWeight: '700' },
   unread: { minWidth: 24, minHeight: 24, padding: 5, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  demoNote: { textAlign: 'center', color: colors.muted, fontSize: 10, padding: 8, backgroundColor: '#EAF0FA' },
   error: { padding: 12, margin: 12, borderRadius: 10, backgroundColor: '#FFF0EF' },
   messages: { padding: 18, gap: 12, flexGrow: 1 },
   message: { maxWidth: '87%', borderRadius: 18, padding: 14, gap: 6 }, mine: { alignSelf: 'flex-end', backgroundColor: colors.primary, borderBottomRightRadius: 4 }, theirs: { alignSelf: 'flex-start', backgroundColor: 'white', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: colors.line },

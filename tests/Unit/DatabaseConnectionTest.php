@@ -19,6 +19,8 @@ final class DatabaseConnectionTest extends TestCase
             self::assertSame(PDO::ERRMODE_EXCEPTION, $options[PDO::ATTR_ERRMODE]);
             self::assertSame(PDO::FETCH_ASSOC, $options[PDO::ATTR_DEFAULT_FETCH_MODE]);
             self::assertFalse($options[PDO::ATTR_EMULATE_PREPARES]);
+            // Sem tempo limite, um MySQL inalcançável segura a requisição além dos 20 s do app.
+            self::assertSame(DATABASE_CONNECT_TIMEOUT_DEFAULT, $options[PDO::ATTR_TIMEOUT]);
             return $pdo;
         });
         self::assertTrue($called); self::assertSame($pdo, $result);
@@ -33,7 +35,7 @@ final class DatabaseConnectionTest extends TestCase
 
     public static function invalidSettings(): array
     {
-        return array_map(static fn(array $changes): array => [$changes], [['host' => ''], ['host' => 'localhost;dbname=other'], ['name' => ''], ['name' => 'db;host=other'], ['name' => str_repeat('a', 65)], ['user' => ' '], ['password' => []], ['host' => null], ['port' => '0'], ['port' => 65536], ['port' => 'abc'], ['port' => []]]);
+        return array_map(static fn(array $changes): array => [$changes], [['host' => ''], ['host' => 'localhost;dbname=other'], ['name' => ''], ['name' => 'db;host=other'], ['name' => str_repeat('a', 65)], ['user' => ' '], ['password' => []], ['host' => null], ['port' => '0'], ['port' => 65536], ['port' => 'abc'], ['port' => []], ['timeout' => '0'], ['timeout' => '16'], ['timeout' => 'abc'], ['timeout' => []]]);
     }
 
     public function testConnectionFailureDoesNotLeakCredentialsAndKeepsCause(): void
@@ -47,6 +49,20 @@ final class DatabaseConnectionTest extends TestCase
             self::assertStringContainsString('DB_PORT', $error->getMessage());
             self::assertStringNotContainsString('secret details', $error->getMessage());
         }
+    }
+
+    public function testConnectTimeoutIsConfigurableWithinTheAppDeadline(): void
+    {
+        foreach (['1' => 1, '15' => 15, '' => DATABASE_CONNECT_TIMEOUT_DEFAULT, 7 => 7] as $value => $expected) {
+            self::assertSame($expected, databaseConnectionSettings(['timeout' => $value] + self::settings())['timeout']);
+        }
+        self::assertSame(DATABASE_CONNECT_TIMEOUT_DEFAULT, databaseConnectionSettings(self::settings())['timeout']);
+        self::assertLessThan(20, DATABASE_CONNECT_TIMEOUT_MAX, 'O PHP precisa desistir antes do app (20 s).');
+        $options = [];
+        createDatabaseConnection(['timeout' => '3'] + self::settings(), function (string $dsn, string $user, string $password, array $given) use (&$options): PDO {
+            $options = $given; return $this->createMock(PDO::class);
+        });
+        self::assertSame(3, $options[PDO::ATTR_TIMEOUT]);
     }
 
     public function testPortBoundariesAndDefaultPassword(): void

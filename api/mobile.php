@@ -49,13 +49,33 @@ if ($method === 'OPTIONS') apiOptions();
 if (!in_array($method, ['GET', 'POST'], true)) apiJson(405, ['error' => 'Método não permitido.']);
 $action = $_GET['action'] ?? 'bootstrap';
 if (!is_string($action) || !preg_match('/^[a-z_]{1,40}$/D', $action)) apiJson(400, ['error' => 'Operação inválida.']);
-$readActions = ['ping', 'bootstrap', 'messages', 'providers', 'admin_overview', 'admin_users'];
+$readActions = ['ping', 'health', 'bootstrap', 'messages', 'providers', 'admin_overview', 'admin_users'];
 if (($method === 'GET') !== in_array($action, $readActions, true)) {
     apiJson(405, ['error' => 'Método não permitido para esta operação.']);
 }
 $data = $method === 'POST' ? apiReadJson() : [];
 
 if ($action === 'ping') apiJson(200, ['app' => 'CondoConnect', 'mobile_api' => 1]);
+// Verificação de saúde pública: diz se o banco conecta e se as tabelas existem.
+// Nunca devolve host, usuário, senha ou mensagem do driver; o detalhe fica só no log do servidor.
+if ($action === 'health') {
+    require_once __DIR__ . '/../backend/database/schema_status.php';
+    $report = ['app' => 'CondoConnect', 'mobile_api' => 1, 'database' => 'ok', 'tables' => 'unknown', 'missing_tables' => [], 'schema_updated' => false];
+    try {
+        $schema = databaseSchemaStatus(getPDO());
+        $report['tables'] = $schema['missing_tables'] ? 'missing' : 'ok';
+        $report['missing_tables'] = $schema['missing_tables'];
+        $report['schema_updated'] = $schema['migrated'];
+    } catch (DatabaseConfigurationException $error) {
+        error_log('SISC health: ' . $error->getMessage());
+        $report['database'] = 'not_configured';
+    } catch (Throwable $error) {
+        error_log('SISC health: ' . get_class($error) . ': ' . ($error->getPrevious() ?? $error)->getMessage());
+        $report['database'] = 'unavailable';
+    }
+    $report['ok'] = $report['database'] === 'ok' && $report['tables'] === 'ok';
+    apiJson($report['ok'] ? 200 : 503, $report + ($report['ok'] ? [] : ['code' => $report['database'] === 'ok' ? 'database_outdated' : 'database_unavailable']));
+}
 if ($action === 'login') {
     $email = strtolower(trim((string)($data['email'] ?? '')));
     $password = (string)($data['senha'] ?? '');

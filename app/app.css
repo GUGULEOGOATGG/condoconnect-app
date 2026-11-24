@@ -72,6 +72,16 @@ main.screen { flex: 1; padding: 20px 18px 28px; display: flex; flex-direction: c
 button.card { width: 100%; text-align: left; }
 button.card:active, .link-row:active, .tile:active { background: var(--blue); }
 .card.warn { border-color: #F5D77E; background: #FFF9E8; }
+/* Resultado do botão "Testar conexão". */
+.check { display: flex; flex-direction: column; gap: 10px; }
+.check:empty { display: none; }
+.check-summary { font-weight: 700; margin: 0; }
+.check-summary.ok { color: var(--green); }
+.check-summary.bad { color: var(--amber); }
+.check-step { display: flex; flex-direction: column; gap: 2px; }
+.check-step.ok b { color: var(--green); }
+.check-step.bad b { color: var(--red); }
+.check-step span { overflow-wrap: anywhere; }
 .card.unread { border-color: #BCD3FC; background: #F2F7FF; }
 .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 

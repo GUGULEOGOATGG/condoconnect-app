@@ -17,6 +17,15 @@ function invoke(method: string, action: string, authorization?: string) {
 test('native API exposes a read-only version check without database access', { skip: !available }, () => {
   assert.deepEqual(invoke('GET', 'ping'), { body: { app: 'CondoConnect', mobile_api: 1 }, status: 200 });
 });
+test('health check answers JSON without a database and never exposes connection details', { skip: !available }, () => {
+  const health = invoke('GET', 'health');
+  assert.equal(health.status, 503);
+  assert.equal(health.body.ok, false);
+  assert.ok(['not_configured', 'unavailable'].includes(health.body.database), health.body.database);
+  assert.equal(health.body.code, 'database_unavailable');
+  assert.doesNotMatch(JSON.stringify(health.body), /SQLSTATE|password|senha|DB_|127\.0\.0\.1|localhost/i);
+  assert.equal(invoke('POST', 'health').status, 405);
+});
 test('native API rejects method confusion and unauthenticated writes before database access', { skip: !available }, () => {
   assert.equal(invoke('POST', 'ping').status, 405);
   assert.equal(invoke('GET', 'login').status, 405);
@@ -59,6 +68,12 @@ test('HTTP API enforces JSON shape, role restrictions, method rules and bearer a
   assert.equal((await post('login', '{"email":{"nested":"value"}}')).status, 400);
   assert.equal((await post('login', 'invalid-json')).status, 400);
   assert.equal((await post('login', '{"email":"","senha":""}')).status, 400);
+  // Sem banco configurado, o login responde na hora com 503 e o código do banco (o app mostra "Banco indisponível").
+  const started = Date.now();
+  const noDatabase = await post('login', '{"email":"morador@example.test","senha":"Seguro123!"}');
+  assert.equal(noDatabase.status, 503);
+  assert.equal((await noDatabase.json()).code, 'database_unavailable');
+  assert.ok(Date.now() - started < 10000, 'o PHP precisa responder antes do limite de 20 s do app');
   assert.equal((await post('create_ticket', '{"usuario_id":999}')).status, 401);
   assert.equal((await post('cancel_reservation', '{"id":999}')).status, 401);
   assert.equal((await fetch(`${endpoint}?action=send_message`)).status, 405);

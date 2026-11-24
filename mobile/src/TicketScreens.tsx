@@ -75,7 +75,7 @@ export function NewTicketScreen({ onDone }: { onDone: () => void }) {
   return <Screen><Label>Vamos cuidar disso</Label><Title>Novo chamado</Title><Body>Conte o que aconteceu. Quanto mais detalhes, melhor podemos ajudar.</Body><Card><Label>Categoria</Label><Chips values={categories} selected={category} onSelect={setCategory} /><Field label="Título do problema" value={title} onChangeText={setTitle} maxLength={190} placeholder="Ex.: Lâmpada do corredor piscando" /><Field label="Descrição" value={description} onChangeText={setDescription} multiline maxLength={10000} placeholder="Descreva o que precisa de atenção..." /><Field label="Local do problema" value={place} onChangeText={setPlace} maxLength={255} placeholder="Ex.: Bloco A, 2º andar" /><Label>Prioridade</Label><Chips values={priorities} selected={priority} onSelect={setPriority} /><DateField label="Data desejada" value={date} onChange={setDate} minimumDate={new Date()} /><Button title="Enviar chamado" icon="arrow-forward" loading={action.busy} onPress={() => action.run(async () => {
     const input = { titulo: title.trim(), descricao: description.trim(), local_problema: place.trim(), categoria: category, prioridade: priority, data_servico: localDate(date) };
     const error = validateTicket(input); if (error) throw new Error(error);
-    await app.createTicket(input); Alert.alert(app.mode === 'demo' ? 'Chamado de demonstração criado' : 'Chamado enviado', 'Você pode acompanhar o atendimento na lista de chamados.'); onDone();
+    await app.createTicket(input); Alert.alert('Chamado enviado', 'Você pode acompanhar o atendimento na lista de chamados.'); onDone();
   })} /></Card></Screen>;
 }
 const t = StyleSheet.create({

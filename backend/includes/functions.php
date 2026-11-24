@@ -640,7 +640,7 @@ function approveSyndicVerification(int $userId,int $approverId,string $status): 
         $cond=(int)$target['condominio_id'];
         dbRow('SELECT id FROM condominios WHERE id=? FOR UPDATE',[$cond]);
         $manager=dbRow('SELECT usuario_id FROM condominio_sindicos WHERE condominio_id=?',[$cond]);
-        if ($status==='aprovado' && $manager && (int)$manager['usuario_id']!==$userId) throw new DomainException('Este condom?nio j? possui um s?ndico respons?vel.');
+        if ($status==='aprovado' && $manager && (int)$manager['usuario_id']!==$userId) throw new DomainException('Este condomínio já possui um síndico responsável.');
         dbExecute('UPDATE users SET certificado_status=?,verificado=?,aprovado_por=?,aprovado_em=NOW() WHERE id=?',[$status,(int)($status==='aprovado'),$approverId,$userId]);
         if ($status==='aprovado') dbExecute('INSERT INTO condominio_sindicos (condominio_id,usuario_id) VALUES (?,?) ON DUPLICATE KEY UPDATE usuario_id=VALUES(usuario_id)',[$cond,$userId]);
         else dbExecute('DELETE FROM condominio_sindicos WHERE condominio_id=? AND usuario_id=?',[$cond,$userId]);

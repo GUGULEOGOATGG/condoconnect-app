@@ -6,12 +6,10 @@ A aplicação web original é preservada. O arquivo novo `api/mobile.php` conect
 
 ## Começar pelo celular
 
-Abra o APK de teste entregue e instale o CondoConnect. Na primeira tela, toque em
-**Explorar demonstração** para conhecer as telas sem servidor ou conta.
-Os dados desse modo são fictícios; as alterações ficam na memória e são descartadas
-ao sair da demonstração ou encerrar o aplicativo.
+Abra o APK de teste entregue e instale o CondoConnect. O app sempre usa dados reais do
+servidor: é preciso uma conta cadastrada no sistema.
 
-Para usar contas reais, toque em **Entrar na minha conta**, informe o endereço HTTPS
+Toque em **Entrar na minha conta**, informe o endereço HTTPS
 do site e entre com sua conta existente. A raiz deve incluir a subpasta do sistema,
 quando houver: `https://seu-dominio.com.br/sisc-test`.
 Não inclua `/api` ou o nome de um arquivo no endereço.
@@ -28,7 +26,6 @@ Não inclua `/api` ou o nome de um arquivo no endereço.
 - Comunicados e confirmação de leitura.
 - Áreas comuns, reservas, verificação de conflitos pelo servidor e cancelamento.
 - Notificações dentro do app, perfil e atualização de nome/telefone.
-- Modo de demonstração para explorar os fluxos sem servidor (perfil de morador).
 
 ### Níveis de acesso (versão 2.0)
 
@@ -77,9 +74,14 @@ Enquanto o servidor não tiver HTTPS, este projeto gera um **APK de teste**: o e
 `http://2.24.65.149:8080/sisc-test` já vem preenchido e o HTTP é liberado somente para esse
 servidor. Em HTTP a senha trafega sem criptografia; não distribua esse APK para moradores.
 
-Quando o servidor tiver HTTPS: troque o endereço em `mobile/.env`, apague a linha
-`EXPO_PUBLIC_ALLOW_HTTP`, apague a pasta `mobile/android/app/src/release` e remova o bloco
-`env` do passo "Compilar o APK" em `.github/workflows/android-apk.yml`.
+Quando o servidor tiver HTTPS, siga a seção "Voltar para HTTPS" do `README.md` da raiz:
+trocar o endereço em `mobile/.env`, apagar a linha `EXPO_PUBLIC_ALLOW_HTTP`, apagar a pasta
+`mobile/android/app/src/release`, esvaziar `insecureHttpHosts` em `src/domain.ts` e trocar o
+bloco `env` do passo "Compilar o APK" em `.github/workflows/android-apk.yml`.
+
+Na tela de login, o botão **Testar conexão** chama `?action=ping` e `?action=health` e mostra
+em que etapa a conexão para: celular sem acesso ao servidor, servidor sem a API, banco
+indisponível ou tabelas faltando.
 
 ## Conectar ao servidor existente
 
@@ -155,10 +157,9 @@ Não há conta Expo, chave de produção ou credencial do servidor embutida nest
 
 ## Verificação e limites
 
-Os testes cobrem validação de chamados e reservas, sobreposição de horários no modo
-demo, cliente HTTP, erros de conexão e os contratos públicos/sem autenticação da API.
+Os testes cobrem validação de chamados e reservas, cliente HTTP, erros de conexão e os contratos públicos/sem autenticação da API.
 A integração com banco real, entrega de e-mails e contas reais depende da instalação
-do backend; não use o modo de demonstração como evidência de teste desses serviços.
+do backend.
 
 
 ### Resultado desta entrega (versão 2.0)

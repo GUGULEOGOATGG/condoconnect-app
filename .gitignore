@@ -10,3 +10,5 @@ storage/*.sqlite
 test-results/
 .netlify-public/
 
+# O mobile/.env só tem o endereço público do servidor (sem senhas) e é usado pelos testes e pelo APK.
+!mobile/.env

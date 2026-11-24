@@ -1,267 +1,421 @@
-# CondoConnect — PHP + MySQL
+# CondoConnect
 
-## Aplicativo Android
+Sistema para condomínios: chamados de manutenção, conversas, reservas de espaços e comunicados.
+Este guia leva você do zero até o sistema funcionando no servidor e no celular, um passo de cada vez.
 
-A pasta `mobile/` contém o aplicativo nativo Android em React Native/Expo, com
-modo de demonstração e conexão ao backend existente. Consulte `mobile/README.md`
-para instalação, conexão e geração do APK. A nova rota do app é `api/mobile.php`.
-O site original é preservado.
+> **Servidor de teste:** `http://2.24.65.149:8080/sisc-test`, pasta `/var/www/html/sisc-test`.
+> Ele ainda usa **HTTP, sem criptografia**: a senha viaja aberta pela rede. Use somente contas
+> de teste até o servidor ter HTTPS (seção 7).
 
-## Aplicativo web para celular (pasta `app/`)
+**Sumário**
 
-A pasta `app/` é o CondoConnect para o navegador do celular, com as mesmas telas do
-aplicativo Android e o mesmo login por nível de acesso (morador, prestador, síndico e
-administrador). Ele usa `api/mobile.php` do próprio servidor: não tem banco nem regra própria.
+1. [O que é cada parte](#1-o-que-é-cada-parte)
+2. [Colocar no servidor](#2-colocar-no-servidor)
+3. [Criar uma conta de cada nível e entrar](#3-criar-uma-conta-de-cada-nível-e-entrar)
+4. [Abrir no celular](#4-abrir-no-celular)
+5. [Gerar um APK novo pelo GitHub Actions](#5-gerar-um-apk-novo-pelo-github-actions)
+6. [Problemas comuns](#6-problemas-comuns)
+7. [Voltar para HTTPS](#7-voltar-para-https)
+8. [Para quem vai mexer no código](#8-para-quem-vai-mexer-no-código)
 
-1. Publique as pastas `app/` e `api/` (com o `api/mobile.php` desta entrega) junto do site.
-2. Abra `https://seu-dominio.com.br/SUBPASTA/app/` no celular e entre com a conta do site.
-3. No menu do navegador, use "Adicionar à tela inicial" para abrir como aplicativo.
+---
 
-Use sempre HTTPS. O token de acesso fica no armazenamento do navegador daquele aparelho e
-expira em 7 dias; "Sair da minha conta" revoga o token no servidor. A página envia uma
-política de segurança de conteúdo que só permite scripts e conexões do próprio servidor.
-Para criar contas de cada nível, veja "Contas para cada nível" em `mobile/README.md`.
+## 1. O que é cada parte
 
+O CondoConnect tem **três formas de uso** e **um único banco de dados**:
 
-## Instalação
-1. Requisitos: PHP 8.1+ com PDO, pdo_mysql, mbstring, fileinfo, curl e openssl, Apache com PHP habilitado,
-   MySQL 8+ ou MariaDB 10.6+. Não publicar em hospedagem apenas estática.
-2. Extraia esta pasta. A raiz web deve conter index.php, pages/, backend/ e frontend/.
-   Não aponte o DocumentRoot apenas para frontend/.
-3. Importe backend/database/db_sisc.sql no phpMyAdmin ou cliente MySQL.
-   O mesmo SQL foi entregue separadamente. Basta importar uma das cópias.
-4. Copie `.env.example` para `.env` na raiz e configure DB_HOST, DB_PORT,
-   DB_NAME, DB_USER e DB_PASS. Para aproveitar a configuração antiga, copie
-   `vai.env` para `.env`. Não sobrescreva um `.env` já configurado.
-   Se `.env` não existir, o sistema carrega `vai.env` automaticamente.
-   Variáveis do servidor têm prioridade; `DB_DATABASE`, `DB_USERNAME` e
-   `DB_PASSWORD` também são aceitos. `.env.example` é somente um modelo.
-   O SQL de instalação usa `db_sisc`: ajuste seu CREATE DATABASE/USE
-   para o DB_NAME escolhido antes de importar em uma instalação nova.
-   Em Docker, DB_HOST normalmente é o nome do serviço do banco, e não 127.0.0.1.
-   Use uma conta MySQL própria para a aplicação após a instalação.
-5. Dê ao usuário do PHP permissão de escrita em backend/storage/uploads/ e na
-   pasta de sessões do PHP. Mantenha backend/ bloqueado para acesso HTTP.
-6. Abra pages/cadastro.php e crie sua conta. Depois teste login e um novo chamado.
-   O SQL inclui perfis fictícios com senha pública. Seus logins ficam bloqueados
-   por padrão; `APP_DEMO_LOGIN=1` é exclusivo para um ambiente de demonstração.
-7. Configure `BREVO_API_KEY` e `BREVO_FROM_EMAIL` no servidor. A API Brevo é usada
-   para confirmação de cadastro, recuperação de senha e códigos de duas etapas.
-8. Mantenha `APP_AUTO_MIGRATE=0`. Essa opção cobre apenas parte do schema;
-   para atualizar um banco existente, execute a migração CLI descrita abaixo.
-9. Configure as variáveis do Mercado Pago antes de ativar o checkout: `MERCADOPAGO_CLIENT_ID`,
-   `MERCADOPAGO_CLIENT_SECRET`, `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_PUBLIC_KEY` e
-   `MERCADOPAGO_REDIRECT_URI`. O endpoint pronto está em `api/mercadopago.php`.
+| Parte | O que é | Onde fica no projeto | Endereço no servidor de teste |
+|---|---|---|---|
+| **Site** | Páginas abertas no navegador do computador ou do celular | `pages/`, `frontend/`, `index.php` | http://2.24.65.149:8080/sisc-test/ |
+| **App web** | Versão para celular, aberta no navegador e instalável na tela inicial | `app/` | http://2.24.65.149:8080/sisc-test/app/ |
+| **APK** | Aplicativo Android instalado no celular | `mobile/` | baixado em Releases (seção 4) |
 
-## Mercado Pago
+Como elas se ligam ao banco:
 
-A integração foi adicionada em `api/mercadopago.php` com três ações principais:
-- `status`: informa se as chaves já estão configuradas.
-- `oauth_token`: troca `client_id` e `client_secret` pelo token do Mercado Pago.
-- `create_payment`: cria um pagamento usando `MERCADOPAGO_ACCESS_TOKEN`.
-
-Exemplo de uso:
-
-```bash
-curl -X POST http://localhost/api/mercadopago.php \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "action": "status"
-  }'
+```mermaid
+flowchart LR
+    S[Site<br/>pages/*.php] --> B[backend/<br/>regras e permissões]
+    W[App web<br/>app/] --> A[api/mobile.php]
+    K[APK Android<br/>mobile/] --> A
+    A --> B
+    B -->|lê .env| M[(MySQL<br/>db_sisc)]
 ```
 
-Depois de configurar o ambiente, basta preencher as variáveis e chamar `create_payment` com:
-- `amount`
-- `description`
-- `payment_method_id` (ex.: `pix` ou `credit_card`)
-- `payer_email`
-- `external_reference`
+- O **site** fala direto com o `backend/`.
+- O **app web** e o **APK** não têm banco próprio: os dois chamam `api/mobile.php` no mesmo
+  servidor do site. Por isso, uma conta criada no site entra no app e vice-versa.
+- O `backend/` lê o endereço, o usuário e a senha do MySQL no arquivo **`.env`**, na raiz do site
+  (`/var/www/html/sisc-test/.env`). Esse arquivo é criado pelo comando da seção 2.3 e **nunca**
+  vai para o GitHub.
 
-## Corrigir o endereço /pages/login.php
-O erro “Not Found” é emitido pelo Apache antes de executar a conexão com o banco.
-Ele exige corrigir a localização dos arquivos ou o DocumentRoot.
+### Níveis de acesso
 
-Para usar exatamente http://2.24.65.149:8080/pages/login.php, o DocumentRoot da
-porta 8080 precisa apontar para a pasta deste projeto, que contém pages/login.php.
-Há um modelo em deploy/apache.conf. Ajuste o caminho, habilite o site e valide
-com apachectl configtest antes de recarregar o Apache. Preserve outros sites.
+Cada conta tem um nível. Cada nível tem suas telas, e o **servidor confere a permissão em toda
+operação**: mesmo que alguém altere o app, o servidor recusa o que aquele nível não pode fazer.
 
-Se o DocumentRoot for /var/www/html e você extrair em
-/var/www/html/sisc-atualizado, use:
-http://2.24.65.149:8080/sisc-atualizado/pages/login.php
+| Nível | O que vê e faz |
+|---|---|
+| **Morador** | Abre chamados, reserva espaços, lê comunicados, conversa com prestadores e com o síndico |
+| **Prestador** | Vê os chamados disponíveis, aceita atendimentos e conversa com os moradores |
+| **Síndico** | Administra **o próprio** condomínio: comunicados, reservas, chamados e informações |
+| **Administrador** | Painel com todos os condomínios, lista de usuários e aprovação de síndicos |
 
-Se mantiver os diretórios externos do ZIP original, eles também precisam constar
-na URL, ou o DocumentRoot deve apontar para a pasta interna correta.
-Não foi feita alteração no servidor remoto: esta entrega contém os arquivos.
+---
 
-Os caminhos são calculados para raiz ou subpasta. Se houver um proxy/Alias que
-altere os caminhos, defina APP_BASE_PATH=/sisc-atualizado (ou / para a raiz).
-As rotas físicas não exigem mod_rewrite. O .htaccess define index.php como entrada.
-Não copie por cima de um index.html antigo: ele pode prevalecer se o servidor
-ignorar DirectoryIndex. Instale em pasta limpa e depois ajuste o DocumentRoot.
+## 2. Colocar no servidor
 
-## Organização
-- frontend/pages/: páginas PHP originais com ajustes de validação e caminhos.
-- frontend/includes/: cabeçalho, menu e rodapé; pontes para funções e autenticação.
-- frontend/assets/, frontend/style/, frontend/global/: estilos e scripts preservados.
-- backend/config/: conexão configurável com MySQL.
-- backend/includes/: funções de dados, sessão, proteção e autenticação.
-- backend/database/: SQL completo.
-- backend/storage/uploads/: imagens recebidas, não expostas por URL direta.
-- backend/referencias/versao-alternativa-original.zip: segunda aplicação e arquivos
-  de Netlify/testes do ZIP original preservados como referência, fora do fluxo ativo.
-- mobile/: aplicativo nativo Android, projeto Android Studio, testes e instruções.
-- pages/, includes/, config/, index.php e logout.php na raiz: entradas de
-  compatibilidade que mantêm os endereços antigos sem duplicar a lógica.
+Todos os comandos desta seção são digitados **no servidor**, por SSH (no Windows, pelo PuTTY ou
+pelo Terminal: `ssh usuario@2.24.65.149`). Linhas que começam com `sudo` pedem a senha do servidor.
 
-## Funcionalidades desta base
-Cadastro com hash de senha, login/logout, sessão autenticada, painel com chamados
-do usuário, novo chamado e anexo de imagem de até 2 MB, registro de contato.
-As páginas públicas mantêm o layout original. Perfil de prestador e síndico ainda
-usa o painel básico do original; não há novo fluxo de gestão implementado.
-As tabelas de mensagens/avaliações existem para as funções já presentes. A avaliação
-é protegida no backend: o usuário não pode editar sua média nem avaliar a si próprio.
-A antiga página sqlite.php agora explica a migração, sem expor dados das contas.
-A recuperação de senha, a confirmação de cadastro e os códigos de duas etapas usam
-tokens/códigos temporários e envio pela API Brevo. Contato registra no banco, sem
-enviar email.
+### 2.1 Programas necessários (uma vez só)
 
-## Banco existente
-Esta atualização aplica a migração comunitária e os dados fictícios de
-demonstração uma única vez, no primeiro acesso a uma página autenticada após
-o deploy do commit. O usuário MySQL da aplicação precisa poder criar/alterar
-tabelas e inserir dados. As conversas e os registros existentes são preservados.
-A execução usa uma trava no banco; a versão concluída fica em `app_migrations`.
-Os perfis de demonstração continuam com login bloqueado por padrão.
-Condomínios existentes com seções vazias recebem comunicados e áreas comuns
-identificados como exemplos, além de uma reserva passada cancelada que não
-bloqueia a agenda. Dados preenchidos são preservados. Revise os exemplos antes
-de usar os espaços para reservas reais. Administradores podem selecionar o
-condomínio nas páginas de comunicados, reservas e condomínio.
-
-Para desativar essa atualização pelo site, configure `APP_DEPLOY_UPGRADE=0`.
-Para executar manualmente no servidor (com essa variável habilitada):
+O servidor de teste usa Debian com Apache. Instale o PHP, as extensões e o MySQL (MariaDB):
 
 ```bash
-php backend/database/update_application.php
+sudo apt update
+sudo apt install apache2 libapache2-mod-php php php-mysql php-mbstring php-curl php-xml mariadb-server rsync git
+sudo a2enmod rewrite
 ```
 
-O comando informa as quantidades de usuários, chamados, condomínios, reservas
-e comunicados e termina com `APPLICATION_UPDATE_OK`.
+Confira se o PHP é 8.1 ou mais novo: `php -v`.
 
-Para verificar a chave Brevo e o remetente ativo, sem enviar e-mail nem exibir
-credenciais, execute no servidor:
+### 2.2 Enviar os arquivos para /var/www/html/sisc-test
+
+**Pastas e arquivos que vão para o servidor:**
+
+| Enviar | Não enviar |
+|---|---|
+| `.htaccess`, `.env.example`, `index.php`, `logout.php` | `mobile/` (código do APK) |
+| `api/`, `app/`, `assets/`, `backend/`, `config/` | `tests/`, `docs/`, `node_modules/` |
+| `frontend/`, `global/`, `includes/`, `pages/`, `style/` | `.git/`, `.github/`, `netlify/` |
+| `tools/` (comandos de configuração, bloqueados na web) | nenhum `.env` do seu computador |
+
+O jeito mais simples é baixar direto do GitHub no próprio servidor e copiar com o `rsync`, que
+**não apaga** o `.env` nem as fotos e documentos já enviados pelos usuários:
 
 ```bash
-php tools/check-brevo.php
+cd /tmp
+rm -rf condoconnect-app
+git clone --depth 1 https://github.com/GUGULEOGOATGG/condoconnect-app.git
+sudo mkdir -p /var/www/html/sisc-test
+sudo rsync -a \
+  --exclude=.git --exclude=.github --exclude=mobile --exclude=tests --exclude=docs \
+  --exclude=node_modules --exclude=netlify --exclude=.env --exclude=/storage --exclude='*.docx' --exclude='*.asta' \
+  /tmp/condoconnect-app/ /var/www/html/sisc-test/
 ```
 
-O resultado esperado é `BREVO_ACCOUNT_HTTP: 200` e `BREVO_OK`.
-Confirmação, recuperação de senha e códigos de acesso usam o endpoint
-[de e-mail transacional do Brevo](https://developers.brevo.com/docs/send-a-transactional-email).
+> Prefere usar o mouse? No Windows, o programa **WinSCP** copia as mesmas pastas da tabela para
+> `/var/www/html/sisc-test`. Não apague o `.env` nem a pasta `backend/storage` do servidor.
 
-Se o chat apresentar `SQLSTATE[42S02]` indicando que `chat_participantes` não
-existe, execute a migração incremental no servidor, após fazer backup:
+Dê ao Apache permissão de gravar as fotos, os anexos e os certificados:
+
+```bash
+sudo mkdir -p /var/www/html/sisc-test/backend/storage/uploads /var/www/html/sisc-test/backend/storage/perfil /var/www/html/sisc-test/backend/storage/certificados
+sudo chown -R www-data:www-data /var/www/html/sisc-test/backend/storage
+```
+
+### 2.3 Criar o banco e o usuário do MySQL
+
+Entre no MySQL como administrador:
+
+```bash
+sudo mysql
+```
+
+Cole os comandos abaixo, **trocando `troque-por-uma-senha-forte`** por uma senha só sua (anote-a),
+e termine com `EXIT;`:
+
+```sql
+CREATE DATABASE db_sisc CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'condo'@'localhost' IDENTIFIED BY 'troque-por-uma-senha-forte';
+GRANT ALL PRIVILEGES ON db_sisc.* TO 'condo'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+Não use o usuário `root` do MySQL no site: ele costuma entrar só pelo `sudo` e não funciona no PHP.
+
+### 2.4 Ligar o site ao banco: `php tools/configurar-banco.php`
+
+Este comando pergunta os dados do MySQL, testa a conexão, explica o que está errado quando falha
+e, quando dá certo, grava o `.env`. Em um banco vazio, ele também importa as tabelas
+(`db_sisc.sql`) e aplica a migração.
 
 ```bash
 cd /var/www/html/sisc-test
-php backend/database/upgrade_business_rules.php
+sudo php tools/configurar-banco.php
 ```
 
-O script usa o `.env` da raiz e a configuração de conexão da aplicação. Confira
-que `DB_NAME` (ou `DB_DATABASE`) aponta para o banco usado pelo site (`db_sisc`
-no erro informado). A conta precisa de permissão para criar e alterar tabelas.
-A migração cria as tabelas ausentes, adiciona campos necessários e recupera os
-participantes das conversas existentes, sem apagar conversas ou mensagens.
-Ela pode ser executada novamente. Aguarde `MIGRATION_OK` e recarregue o chat.
-O SQL de instalação contém `USE db_sisc`; para bancos com outro nome, ajuste
-o destino. Para atualizar um banco existente, use a migração incremental.
+Respostas para o servidor de teste (Enter aceita o valor entre colchetes):
 
-## Conectar ao banco em um comando
+| Pergunta | Resposta |
+|---|---|
+| Endereço do MySQL (DB_HOST) | `127.0.0.1` |
+| Porta (DB_PORT) | `3306` |
+| Nome do banco (DB_NAME) | `db_sisc` |
+| Usuário do MySQL (DB_USER) | `condo` |
+| Senha do MySQL (DB_PASS) | a senha da seção 2.3 (não aparece enquanto você digita) |
+| Importar agora o arquivo db_sisc.sql neste banco? | `s` |
+| Aplicar agora? (migração) | `s` |
 
-Se o site, o app web ou o APK mostram "O banco de dados está indisponível", rode no
-servidor, dentro da pasta do site:
+O comando termina com **`BANCO_OK`**. Se aparecer `ERRO:`, a mensagem diz o que fazer (senha
+errada, banco que não existe, usuário sem permissão, MySQL desligado); corrija e rode de novo.
+Nada é gravado enquanto a conexão não funciona, e o `.env` anterior fica guardado como
+`.env.bak-DATA`.
+
+Depois, ajuste o endereço público usado nos e-mails:
+
+```bash
+sudo nano /var/www/html/sisc-test/.env
+```
+
+Troque a linha `APP_URL=http://localhost` por `APP_URL=http://2.24.65.149:8080`, salve
+(Ctrl+O, Enter) e saia (Ctrl+X). Confira `APP_BASE_PATH=/sisc-test`.
+
+Para testar a configuração de novo a qualquer momento, sem mudar nada:
+
+```bash
+sudo php tools/configurar-banco.php --testar
+```
+
+### 2.5 Migrações (atualizar o banco)
+
+A migração acrescenta tabelas, colunas e dados de exemplo **sem apagar nada**. Ela já roda no
+passo 2.4 em uma instalação nova. Rode de novo sempre que enviar uma versão nova do código:
 
 ```bash
 cd /var/www/html/sisc-test
-php tools/configurar-banco.php
+sudo mysqldump db_sisc > ~/backup-db_sisc-$(date +%F).sql   # cópia de segurança antes
+sudo php backend/database/update_application.php
 ```
 
-O script pergunta endereço, porta, nome do banco, usuário e senha do MySQL, testa a
-conexão e diz exatamente o que corrigir (senha errada, banco inexistente, usuário sem
-permissão, MySQL desligado, driver do PHP ausente). Só grava o `.env` quando a conexão
-funciona, guardando uma cópia do anterior. No fim, confere as tabelas e termina com
-`BANCO_OK`.
+O resultado esperado termina com `APPLICATION_UPDATE_OK`.
 
-## Configuração e diagnóstico
+### 2.6 Reiniciar o Apache
 
-O `.env` é carregado também ao incluir diretamente as configurações do banco e
-do Mercado Pago. Variáveis do servidor têm prioridade sobre o arquivo.
-`DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` são aliases de `DB_NAME`, `DB_USER`
-e `DB_PASS`. `BREVO_SENDER_EMAIL` e `BREVO_SENDER_NAME` também são aceitos.
-Use uma única forma de cada variável; se houver aliases conflitantes na mesma
-fonte, o nome canônico tem prioridade. Valores vazios e a senha `0` são preservados.
-Aceita aspas, comentários após espaço e `export`; em aspas duplas, `\n` vira
-quebra de linha. Não há interpolação de variáveis. Para valores com ` #`, use aspas.
-O `.env` local é ignorado pelo Git e arquivos de ambiente são bloqueados pelo
-`.htaccess` do Apache. `vai.env` é carregado somente quando `.env` não existe.
+O `.htaccess` do projeto bloqueia o `.env`, o `backend/` e o `tools/` na web. Para ele valer,
+o Apache precisa de `AllowOverride All` na pasta do site (modelo pronto em `deploy/apache.conf`).
 
 ```bash
-npm ci --ignore-scripts
-npm run lint
-npm test
-phpunit
-php tools/check-coverage.php
+sudo apachectl configtest      # deve responder "Syntax OK"
+sudo systemctl restart apache2
 ```
 
-Os testes exigem PHP 8.3 com PHPUnit 10.5, Xdebug em modo coverage, PDO MySQL,
-mbstring, fileinfo, curl, openssl e DOM, além de Node.js 22+. Use um MySQL/MariaDB
-isolado: `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_NAME`, `TEST_DB_USER` e
-`TEST_DB_PASS`. O nome precisa ser `sisc_test` ou `sisc_test_` seguido de letras
-minúsculas/números. O padrão local é 127.0.0.1:33079, root, senha vazia.
-**A suíte cria tabelas e limpa dados apenas desse banco de testes.** Não aponte
-essas variáveis para a produção. O workflow fornece um MariaDB isolado.
-Os relatórios ficam em `test-results/coverage.xml`, `coverage.txt`,
-`coverage-html/index.html` e `junit.xml`; o gate falha abaixo de 80% de linhas PHP.
+Confira no navegador do computador:
 
-O SQL é de instalação e não apaga dados. Não converte registros SQLite nem migra
-um banco da versão alternativa. Faça backup; caso condominio_connect já tenha
-outra estrutura, use um banco separado e ajuste o CREATE DATABASE/USE do SQL e
-DB_NAME na configuração. Não importe por cima de tabelas incompatíveis.
+| Endereço | Resultado esperado |
+|---|---|
+| http://2.24.65.149:8080/sisc-test/api/mobile.php?action=ping | `{"app":"CondoConnect","mobile_api":1}` |
+| http://2.24.65.149:8080/sisc-test/api/mobile.php?action=health | `"ok":true` (banco e tabelas funcionando) |
+| http://2.24.65.149:8080/sisc-test/.env | **403 Forbidden** (o arquivo com a senha não pode abrir) |
+| http://2.24.65.149:8080/sisc-test/pages/login.php | Tela de login do site |
 
-## Verificação
-Os testes exercitam regras no banco e fluxos HTTP autenticados em um servidor
-PHP temporário em loopback, verificando também CSRF, JavaScript inline e logs.
-Não validam a configuração do Apache remoto nem fazem pagamentos/envios reais.
-Complete a verificação funcional abaixo na instalação real:
+### 2.7 Atualizar para uma versão nova
 
-1. Abra index.php, pages/login.php e pages/cadastro.php na instalação real.
-2. Crie uma conta, saia, teste senha incorreta e depois a senha correta.
-3. Abra um chamado, confirme-o no painel e consulte a tabela chamados no MySQL.
-4. Teste uma imagem válida e um arquivo inválido (nenhum chamado deve ser salvo
-   quando o upload for inválido).
-5. Com outro usuário, confira que os chamados anteriores não aparecem.
-6. Após sair, acessar dashboard.php deve redirecionar para o login.
-7. Verifique que /backend/database/db_sisc.sql e /.env retornam 403 no Apache.
-8. Teste os links/CSS na raiz e, se aplicável, em uma subpasta.
+Repita o `git clone` e o `rsync` da seção 2.2, rode a migração da seção 2.5 e reinicie o Apache
+(2.6). O `.env` e os arquivos enviados pelos usuários são preservados.
 
-Para atualizar as regras de reservas e o schema comunitário em um banco
-existente, após backup e conferência do `.env`, execute:
+---
+
+## 3. Criar uma conta de cada nível e entrar
+
+### 3.1 Com `php tools/criar-conta.php`
+
+O comando cria a conta já liberada (e-mail confirmado). A senha é pedida no terminal e não
+aparece no histórico. Toda conta pertence a um condomínio, digitado com o nome exato.
+
+Veja os condomínios existentes:
 
 ```bash
-php backend/database/upgrade_community.php
+cd /var/www/html/sisc-test
+sudo php tools/criar-conta.php --listar-condominios
 ```
 
-O CSRF usa o campo `csrf` nos formulários e o header `X-CSRF-Token` em JSON.
-O token é estável durante a sessão, incluindo a renovação do ID no login.
-A sessão expira após duas horas de inatividade; cookies usam HttpOnly e
-SameSite=Lax, com Secure quando houver HTTPS. Atrás de proxy que termina TLS,
-configure HTTPS no servidor ou `APP_HTTPS=1`. Configure `APP_URL` com a origem
-pública, sem caminho, para os links de e-mail; o caminho vem de APP_BASE_PATH.
-As regras de bloqueio na raiz exigem mod_rewrite no Apache.
+A instalação traz três condomínios **de demonstração** que já têm síndico. Para o seu, crie um
+novo com `--criar-condominio` na primeira conta:
 
-O Netlify recebe apenas `.netlify-public`, criado por `npm run build:static`.
-Esse artefato preserva a landing page e os recursos públicos; a aplicação
-completa e suas páginas PHP continuam exigindo hospedagem PHP/MySQL.
+```bash
+# Administrador (cria também o condomínio "Residencial Exemplo")
+sudo php tools/criar-conta.php --nivel=admin --nome="Ana Administradora" --email=admin@exemplo.com.br \
+  --telefone=11990000001 --condominio="Residencial Exemplo" --criar-condominio --cidade="São Paulo" --estado=SP
 
-Resultados e arquivos alterados: [relatório da revisão](docs/auditoria-seguranca-testes.md).
+# Síndico (um por condomínio)
+sudo php tools/criar-conta.php --nivel=sindico --nome="Sérgio Síndico" --email=sindico@exemplo.com.br \
+  --telefone=11990000002 --condominio="Residencial Exemplo"
+
+# Morador
+sudo php tools/criar-conta.php --nivel=morador --nome="Maria Moradora" --email=morador@exemplo.com.br \
+  --telefone=11990000003 --condominio="Residencial Exemplo" --unidade="Bloco A 101"
+
+# Prestador
+sudo php tools/criar-conta.php --nivel=prestador --nome="Paulo Prestador" --email=prestador@exemplo.com.br \
+  --telefone=11990000004 --condominio="Residencial Exemplo"
+```
+
+Cada comando termina com `CONTA_CRIADA id=... nivel=...`. E-mail e telefone não podem se repetir.
+Use senhas de pelo menos 8 caracteres.
+
+Outras formas de criar contas:
+- **Morador e prestador** também se cadastram sozinhos, pelo site ou pelo app ("Ainda não tenho
+  uma conta"). Eles recebem um e-mail de confirmação (exige o Brevo configurado no `.env`).
+- **Síndico** também pode se cadastrar pelo site, enviando o certificado; um administrador aprova
+  em *Verificações*.
+- **Administrador** só é criado pelo `criar-conta.php`.
+- As contas de demonstração (`@demo.example.test`) ficam bloqueadas, a não ser que
+  `APP_DEMO_LOGIN=1` esteja no `.env`.
+
+### 3.2 Entrar
+
+| Onde | Endereço |
+|---|---|
+| Site | http://2.24.65.149:8080/sisc-test/pages/login.php |
+| App web | http://2.24.65.149:8080/sisc-test/app/ |
+| APK | abra o app e toque em **Entrar na minha conta** |
+
+Use o mesmo e-mail e a mesma senha em qualquer um. O app abre as telas do nível da conta:
+
+| Nível | Abas no app |
+|---|---|
+| Morador | Início · Chamados · Conversas · Perfil |
+| Prestador | Início · Atendimentos · Conversas · Perfil |
+| Síndico | Início (gestão do condomínio) · Chamados · Conversas · Perfil |
+| Administrador | Painel · Chamados · Usuários · Conversas · Perfil |
+
+---
+
+## 4. Abrir no celular
+
+### 4.1 App web (qualquer celular)
+
+1. No celular, abra o navegador e acesse **http://2.24.65.149:8080/sisc-test/app/**
+2. Toque em **Testar conexão**. Deve aparecer "Tudo certo".
+3. Entre com sua conta.
+4. Para ter um ícone na tela inicial:
+   - **Android (Chrome):** menu ⋮ → **Adicionar à tela inicial**.
+   - **iPhone (Safari):** botão Compartilhar → **Adicionar à Tela de Início**.
+
+### 4.2 APK (Android 7 ou mais novo, 64 bits)
+
+**Link direto do APK:**
+https://github.com/GUGULEOGOATGG/condoconnect-app/releases/download/apk-teste/CondoConnect-teste.apk
+
+1. Abra o link no **celular**. O Chrome pode avisar que "este tipo de arquivo pode ser
+   perigoso": toque em **Baixar assim mesmo**.
+2. Toque na notificação do download (ou abra o app **Arquivos** → Downloads) e toque em
+   `CondoConnect-teste.apk`.
+3. **Liberar a instalação de apps desconhecidos** (só na primeira vez):
+   - O Android mostra "Por segurança, seu telefone não tem permissão para instalar apps
+     desconhecidos desta fonte". Toque em **Configurações**, ligue **Permitir desta fonte** e
+     volte.
+   - Se não aparecer: **Configurações → Apps → Acesso especial a apps → Instalar apps
+     desconhecidos → Chrome** (ou **Arquivos**) → **Permitir desta fonte**. O caminho muda um
+     pouco de marca para marca; procure "apps desconhecidos" na busca das Configurações.
+   - Android 7: **Configurações → Segurança → Fontes desconhecidas**.
+4. Toque em **Instalar**. Se o Play Protect avisar "App não verificado", toque em
+   **Mais detalhes → Instalar assim mesmo**: o APK de teste não está na Play Store.
+5. Abra o **CondoConnect**, toque em **Entrar na minha conta** e depois em **Testar conexão**.
+   O endereço `http://2.24.65.149:8080/sisc-test` já vem preenchido. O aviso amarelo "Conexão de
+   teste sem criptografia" é esperado enquanto o servidor estiver em HTTP.
+
+Uma versão nova do APK instala por cima da anterior, sem perder o login. Se aparecer
+"App não instalado", desinstale o CondoConnect antigo e instale de novo.
+
+---
+
+## 5. Gerar um APK novo pelo GitHub Actions
+
+O APK é gerado no GitHub, sem precisar de Android Studio.
+
+- **Automático:** todo envio para a branch `main` que mude a pasta `mobile/`, `api/mobile.php` ou
+  o próprio workflow gera um APK novo.
+- **Manual:**
+  1. Abra https://github.com/GUGULEOGOATGG/condoconnect-app/actions
+  2. Clique em **Android APK** (à esquerda) → **Run workflow** → branch `main` → **Run workflow**.
+  3. Espere a bolinha ficar verde (de 15 a 30 minutos). Se ficar vermelha, clique nela para ver
+     em que etapa parou.
+  4. O APK novo substitui o arquivo da release **apk-teste**, em
+     https://github.com/GUGULEOGOATGG/condoconnect-app/releases/tag/apk-teste. O link direto da
+     seção 4.2 continua o mesmo. A release não é apagada.
+
+O endereço do servidor que vem gravado no APK fica em `mobile/.env` e no passo "Compilar o APK" de
+`.github/workflows/android-apk.yml`. Os dois precisam ser iguais (um teste confere isso).
+
+---
+
+## 6. Problemas comuns
+
+O botão **Testar conexão** (na tela de login do APK e do app web) mostra em que etapa a conexão
+para: endereço → servidor → API do aplicativo → banco de dados → tabelas. Comece por ele.
+
+| Mensagem | Causa | Como corrigir |
+|---|---|---|
+| **O servidor demorou a responder. Tente novamente.** (APK 2.0.0, antigo) | O app esperou 20 s sem resposta. Duas causas possíveis: **(a)** o celular não alcança `2.24.65.149:8080` (rede que bloqueia a porta 8080, servidor desligado, firewall); **(b)** o PHP ficava até ~21 s esperando um MySQL inalcançável antes de responder. | Instale o APK novo (seção 4.2): ele diz qual das causas é. Para **(a)**, abra no navegador do celular http://2.24.65.149:8080/sisc-test/api/mobile.php?action=ping; se não abrir, troque de rede (Wi-Fi ↔ dados) e confira o firewall do servidor (`sudo ufw status`: a porta 8080 precisa estar liberada). Para **(b)**, envie o código novo ao servidor (2.7): agora o PHP desiste do MySQL em 5 s e responde "Banco indisponível". |
+| **Servidor fora do alcance: ... não respondeu em 20 segundos** | O celular não recebeu nenhuma resposta do servidor. | Mesmo teste do ping no navegador do celular. Confira a internet, o endereço e se o Apache está ligado (`sudo systemctl status apache2`). |
+| **Servidor fora do alcance: não foi possível abrir conexão com ...** | Sem internet, endereço errado ou servidor recusando a porta. | Confira o endereço (com `:8080` e `/sisc-test`). No servidor: `sudo systemctl restart apache2`. |
+| **O servidor respondeu com erro (404): a API do aplicativo não existe nesse endereço** | O endereço está sem a subpasta ou o servidor está sem `api/mobile.php`. | Use `http://2.24.65.149:8080/sisc-test`. Envie as pastas `api/`, `app/` e `backend/` (seção 2.2). |
+| **O servidor não tem a verificação de saúde (versão antiga da API)** | O servidor tem uma versão antiga de `api/mobile.php`. | Envie a versão atual (seção 2.7). |
+| **O servidor respondeu com erro (500)** | Erro dentro do PHP. | Veja o motivo em `sudo tail -n 50 /var/log/apache2/error.log` e avise quem cuida do código. |
+| **Banco indisponível: o servidor está no ar, mas não conseguiu acessar o MySQL** · no site: *O banco de dados está indisponível no momento* | `.env` com dados errados, MySQL desligado ou usuário sem permissão. | `sudo php tools/configurar-banco.php --testar` mostra a causa. MySQL desligado: `sudo systemctl start mariadb`. Dados errados: `sudo php tools/configurar-banco.php`. |
+| **Banco indisponível: o .env do servidor não tem a configuração do MySQL** | Falta o `.env` ou as linhas `DB_...`. | `sudo php tools/configurar-banco.php` (seção 2.4). |
+| **Banco desatualizado: ... faltam tabelas ou colunas** · no site: *O banco de dados precisa ser atualizado* | Código novo com banco antigo. | Rode a migração (seção 2.5). |
+| **E-mail ou senha inválidos.** | Senha errada, conta inexistente, conta bloqueada ou conta de demonstração. | Confira a senha. Crie a conta com `criar-conta.php` (seção 3). |
+| **Sua sessão expirou. Entre novamente.** | O acesso vale 7 dias, ou a conta saiu em outro aparelho. | Entre de novo. |
+| **Confirme seu e-mail para acessar...** | Conta criada pelo cadastro público ainda sem confirmação. | Clique no link do e-mail. Contas do `criar-conta.php` já vêm confirmadas. |
+| **Neste APK de teste, HTTP só é liberado para 2.24.65.149** | Foi digitado outro endereço com `http://`. | Use `http://2.24.65.149:8080/sisc-test` ou um endereço `https://`. |
+| **Use um endereço HTTPS, sem senha, parâmetros ou fragmentos.** | Endereço com `?`, `#`, usuário/senha ou sem `https://`. | Digite só o endereço do site, ex.: `http://2.24.65.149:8080/sisc-test`. |
+| **Formulário expirado. Volte à página, atualize e tente novamente.** (site) | A página ficou aberta mais de 2 horas, ou os cookies estão bloqueados. | Atualize a página (F5) e envie de novo. |
+| **Not Found** no navegador ao abrir o site | Arquivos fora de `/var/www/html/sisc-test` ou endereço sem `/sisc-test`. | Confira com `ls /var/www/html/sisc-test/pages/login.php`. |
+| `.env` abre no navegador em vez de dar 403 | O Apache está ignorando o `.htaccess`. | Coloque `AllowOverride All` (modelo em `deploy/apache.conf`), rode `sudo a2enmod rewrite` e reinicie o Apache. **Troque a senha do MySQL**, pois ela ficou exposta. |
+| `CONTA_NAO_CRIADA: Selecione um condomínio cadastrado.` | Nome do condomínio diferente do cadastrado. | `--listar-condominios` mostra os nomes; ou acrescente `--criar-condominio`. |
+| `CONTA_NAO_CRIADA: Este condomínio já possui um síndico responsável.` | Cada condomínio tem um síndico só. | Use outro condomínio ou crie um com `--criar-condominio`. |
+| **App não instalado** (Android) | Já existe um CondoConnect assinado de outro jeito. | Desinstale o antigo e instale de novo. |
+
+---
+
+## 7. Voltar para HTTPS
+
+Quando o servidor tiver certificado, retire a liberação de HTTP. Assim a senha passa a viajar
+criptografada.
+
+1. **Certificado no servidor.** O jeito mais comum exige um domínio apontando para o servidor
+   (ex.: `condo.seudominio.com.br`):
+   ```bash
+   sudo apt install certbot python3-certbot-apache
+   sudo certbot --apache -d condo.seudominio.com.br
+   ```
+   Confira que `https://condo.seudominio.com.br/sisc-test/api/mobile.php?action=health` responde
+   `"ok":true`.
+2. **`.env` do servidor:** `APP_URL=https://condo.seudominio.com.br`. Use `APP_HTTPS=1` somente
+   se um proxy recebe o HTTPS e repassa ao Apache em HTTP.
+3. **`mobile/.env`:** troque para `EXPO_PUBLIC_API_BASE_URL=https://condo.seudominio.com.br/sisc-test`
+   e **apague** a linha `EXPO_PUBLIC_ALLOW_HTTP=1`.
+4. **Apague a pasta `mobile/android/app/src/release/`** (ela contém o `AndroidManifest.xml` e o
+   `res/xml/network_security_config.xml`, que liberam HTTP para 2.24.65.149).
+5. **`mobile/src/domain.ts`:** deixe `export const insecureHttpHosts = [];`.
+6. **`.github/workflows/android-apk.yml`**, passo "Compilar o APK": troque
+   `EXPO_PUBLIC_API_BASE_URL` pelo endereço `https://` e apague a linha
+   `EXPO_PUBLIC_ALLOW_HTTP: '1'`. Atualize também o texto das notas da release no passo
+   "Publicar o APK em Releases".
+7. Envie para a `main`. O GitHub Actions gera o APK novo (seção 5); os testes conferem que nenhum
+   endereço HTTP ficou liberado.
+8. Nos celulares, instale o APK novo. Quem tinha salvo o endereço `http://` vai ver um aviso:
+   toque em **Alterar o endereço do condomínio** e informe o `https://`.
+9. Opcional: redirecione o HTTP para o HTTPS no Apache (o certbot oferece isso).
+
+---
+
+## 8. Para quem vai mexer no código
+
+```bash
+npm ci --ignore-scripts && npm test && npm run lint    # site e app web (o lint precisa de PHP)
+cd mobile && npm ci && npm test && npm run typecheck   # APK
+phpunit                                                # PHP, com um MySQL/MariaDB de teste
+```
+
+O `phpunit` usa somente um banco chamado `sisc_test` (variáveis `TEST_DB_HOST`, `TEST_DB_PORT`,
+`TEST_DB_NAME`, `TEST_DB_USER`, `TEST_DB_PASS`) e apaga os dados dele: nunca aponte para o banco
+real. O workflow **Build** roda tudo isso no GitHub com um MariaDB próprio.
+
+Detalhes técnicos (variáveis do `.env`, Brevo, Mercado Pago, migrações antigas, cobertura de
+testes): [docs/referencia-tecnica.md](docs/referencia-tecnica.md). Mais sobre o APK:
+[mobile/README.md](mobile/README.md).

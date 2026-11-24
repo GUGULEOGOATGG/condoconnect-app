@@ -48,7 +48,7 @@
   let poll = null, lastRoute = '', toastTimer = null;
 
   // ---------- utilidades ----------
-  class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
+  class ApiError extends Error { constructor(message, status, kind) { super(message); this.status = status; this.kind = kind || (status ? 'request' : 'unreachable'); } }
   const $app = () => document.getElementById('app');
 
   /** Cria elementos sem innerHTML: todo texto do servidor entra como texto, nunca como marcação. */
@@ -111,29 +111,103 @@
   };
   function endSession() { state.token = null; state.data = null; state.admin = null; state.cond = 0; state.auth = { step: 'login' }; session.save(null); }
 
-  async function api(action, body, query) {
+  // Mensagens que separam as três falhas: servidor fora do alcance, servidor com erro e banco indisponível.
+  // As mesmas do APK (mobile/src/api.ts).
+  const TIMEOUT_MS = 20000;
+  const unreachable = timedOut => `Servidor fora do alcance: ${timedOut ? `${location.host} não respondeu em ${TIMEOUT_MS / 1000} segundos` : `não foi possível abrir conexão com ${location.host}`}. `
+    + 'Confira a internet do celular (Wi-Fi ou dados móveis) e se o servidor está ligado. Toque em “Testar conexão” para ver o diagnóstico.';
+  const databaseMessage = code => code === 'database_outdated'
+    ? 'Banco desatualizado: o servidor está no ar, mas faltam tabelas ou colunas no MySQL. A administração precisa rodar a migração (php backend/database/update_application.php).'
+    : 'Banco indisponível: o servidor está no ar, mas não conseguiu acessar o MySQL. Avise a administração (php tools/configurar-banco.php --testar mostra a causa).';
+  const serverMessage = (status, json) => !json && status === 404
+    ? 'O servidor respondeu com erro (404): a API do aplicativo (api/mobile.php) não foi encontrada. Confira se a pasta api/ foi enviada ao servidor.'
+    : !json ? `O servidor respondeu com erro${status ? ` (${status})` : ''}, mas não com a API do aplicativo. Avise a administração.`
+      : `O servidor respondeu com erro (${status}). Tente novamente; se continuar, avise a administração.`;
+
+  /** Faz a chamada e devolve o JSON mesmo com status de erro (o teste de conexão precisa dele). */
+  async function rawApi(action, body, query) {
     const params = new URLSearchParams({ action, ...(query || {}) });
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000);
-    let response;
+    let timedOut = false;
+    const controller = new AbortController(), timer = setTimeout(() => { timedOut = true; controller.abort(); }, TIMEOUT_MS);
     try {
-      response = await fetch(`${API}?${params}`, {
-        method: body ? 'POST' : 'GET', signal: controller.signal, cache: 'no-store', credentials: 'omit',
-        headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}) },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-    } catch (error) {
-      throw new ApiError(error.name === 'AbortError' ? 'O servidor demorou a responder. Tente novamente.' : 'Não foi possível conectar. Confira sua internet.', 0);
+      let response;
+      try {
+        response = await fetch(`${API}?${params}`, {
+          method: body ? 'POST' : 'GET', signal: controller.signal, cache: 'no-store', credentials: 'omit',
+          headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}) },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+      } catch (error) {
+        throw new ApiError(unreachable(timedOut || error.name === 'AbortError'), 0, 'unreachable');
+      }
+      let payload = null, json = true;
+      try { payload = await response.json(); } catch {
+        if (timedOut) throw new ApiError(unreachable(true), 0, 'unreachable');
+        json = false;
+      }
+      if (json && (!payload || typeof payload !== 'object' || Array.isArray(payload))) json = false;
+      return { status: response.status, payload, json };
     } finally { clearTimeout(timer); }
-    let payload;
-    try { payload = await response.json(); } catch { throw new ApiError('O servidor não retornou uma resposta válida. Avise a administração.', response.status); }
-    if (!response.ok) {
-      const message = payload && typeof payload.error === 'string' ? payload.error : 'Não foi possível concluir a operação.';
-      if (response.status === 401 && state.token && state.data) { endSession(); render(); }
-      throw new ApiError(message, response.status);
+  }
+  async function api(action, body, query) {
+    const { status, payload, json } = await rawApi(action, body, query);
+    const code = json && typeof payload.code === 'string' ? payload.code : '';
+    if (code === 'database_unavailable' || code === 'database_outdated') throw new ApiError(databaseMessage(code), status, 'database');
+    if (!json) throw new ApiError(serverMessage(status, false), status || 502, 'server');
+    if (status >= 500) throw new ApiError(serverMessage(status, true), status, 'server');
+    if (status < 200 || status >= 300) {
+      if (status === 401 && state.token && state.data) { endSession(); render(); }
+      throw new ApiError(typeof payload.error === 'string' ? payload.error : 'Não foi possível concluir a operação.', status, 'request');
     }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ApiError('Resposta inválida do servidor.', 502);
     return payload;
   }
+  /** "Testar conexão": ping (só o PHP) e health (PHP, MySQL e tabelas), com o resultado de cada etapa. */
+  async function checkConnection() {
+    const started = performance.now(), steps = [];
+    const finish = (ok, summary) => ({ ok, summary, steps, seconds: ((performance.now() - started) / 1000).toFixed(1) });
+    steps.push({ label: 'Endereço', ok: true, detail: `${API}${location.protocol === 'http:' ? ' (HTTP, sem criptografia)' : ''}` });
+    let ping;
+    try { ping = await rawApi('ping'); } catch (error) { steps.push({ label: 'Servidor', ok: false, detail: error.message }); return finish(false, error.message); }
+    if (!ping.json || ping.status !== 200 || Number(ping.payload.mobile_api) !== 1) {
+      const message = serverMessage(ping.status, ping.json);
+      steps.push({ label: 'Servidor', ok: true, detail: `Respondeu (código ${ping.status}).` }, { label: 'API do aplicativo', ok: false, detail: message });
+      return finish(false, message);
+    }
+    steps.push({ label: 'Servidor', ok: true, detail: `Respondeu em ${Math.round(performance.now() - started)} ms.` }, { label: 'API do aplicativo', ok: true, detail: 'api/mobile.php encontrada.' });
+    let health;
+    try { health = await rawApi('health'); } catch (error) { steps.push({ label: 'Banco de dados', ok: false, detail: error.message }); return finish(false, error.message); }
+    if (!health.json || health.payload.database === undefined) {
+      const message = 'O servidor não tem a verificação de saúde (versão antiga da API). Envie a versão atual de api/ e backend/ ao servidor.';
+      steps.push({ label: 'Banco de dados', ok: false, detail: message }); return finish(false, message);
+    }
+    if (health.payload.database !== 'ok') {
+      const message = health.payload.database === 'not_configured' ? 'Banco indisponível: o .env do servidor não tem a configuração do MySQL. Rode php tools/configurar-banco.php no servidor.' : databaseMessage('database_unavailable');
+      steps.push({ label: 'Banco de dados', ok: false, detail: message }); return finish(false, message);
+    }
+    steps.push({ label: 'Banco de dados', ok: true, detail: 'O PHP conectou ao MySQL.' });
+    if (health.payload.tables !== 'ok') {
+      const missing = Array.isArray(health.payload.missing_tables) ? health.payload.missing_tables : [];
+      const message = `${databaseMessage('database_outdated')}${missing.length ? ` Faltam: ${missing.join(', ')}.` : ''}`;
+      steps.push({ label: 'Tabelas', ok: false, detail: message }); return finish(false, message);
+    }
+    steps.push({ label: 'Tabelas', ok: true, detail: 'Todas as tabelas existem.' });
+    return finish(true, 'Tudo certo: o servidor, a API e o banco de dados estão funcionando.');
+  }
+  function connectionCheckCard() {
+    const result = h('div', { class: 'check', 'aria-live': 'polite' });
+    const run = button('Testar conexão', node => act(node, async () => {
+      result.replaceChildren(h('p', { class: 'muted small' }, 'Testando...'));
+      const report = await checkConnection();
+      result.replaceChildren(h('p', { class: `check-summary ${report.ok ? 'ok' : 'bad'}` }, report.summary),
+        ...report.steps.map(step => h('div', { class: `check-step ${step.ok ? 'ok' : 'bad'}` }, h('b', null, `${step.ok ? '✓' : '✕'} ${step.label}`), h('span', { class: 'muted small' }, step.detail))),
+        h('p', { class: 'muted small' }, `Tempo total do teste: ${report.seconds} s`));
+    }), { kind: 'secondary', icon: 'pulse' });
+    return card(null, run, result);
+  }
+  /** Aviso fixo quando a página é aberta por HTTP: a senha e os dados trafegam sem criptografia. */
+  const insecureNotice = () => location.protocol === 'http:'
+    ? card({ class: 'warn', role: 'alert' }, h('b', null, 'Conexão de teste sem criptografia (HTTP)'), h('p', { class: 'muted small' }, 'A senha e os dados trafegam abertos pela rede. Use somente contas de teste até o servidor ter HTTPS.'))
+    : null;
   async function loadData() {
     state.data = await api('bootstrap', null, state.cond ? { condominio_id: String(state.cond) } : undefined);
     document.body.dataset.role = state.data.user.tipo_usuario;
@@ -246,7 +320,8 @@
         step === 'code' ? code.node : [email.node, password.node], submit,
         step === 'code' ? button('Voltar ao login', () => set('login'), { kind: 'secondary' })
           : h('button', { class: 'text-link', type: 'button', onclick: () => set('forgot') }, 'Esqueci minha senha'));
-      wrap.append(
+      // append do DOM escreveria false/null como texto: só entram os elementos que existem.
+      wrap.append(...[
         step === 'code' ? head('Só mais um passo', 'Confirme que é você.', 'Enviamos um código de 6 dígitos para seu e-mail. Ele expira em 10 minutos.')
           : h('div', { class: 'hero' }, h('span', { class: 'pill' }, 'MAIS PERTO. MAIS SIMPLES.'), h('h2', null, 'Seu condomínio. Na palma da mão.'), h('p', null, 'Entre com a mesma conta do site. O aplicativo abre as telas do seu nível de acesso.')),
         form,
@@ -254,7 +329,9 @@
           [['morador', 'Chamados, reservas e comunicados'], ['prestador', 'Atendimentos e conversas'], ['sindico', 'Gestão do condomínio'], ['admin', 'Painel, usuários e verificações']]
             .map(([key, text]) => h('div', { class: 'level', 'data-level': key }, h('b', null, ROLES[key]), h('span', null, text)))),
         step === 'login' && button('Ainda não tenho uma conta', () => set('register'), { kind: 'secondary' }),
-        h('p', { class: 'row muted small' }, icon('shield', 'sm'), 'Sua senha não fica guardada neste aparelho.'));
+        insecureNotice(),
+        step === 'login' && connectionCheckCard(),
+        h('p', { class: 'row muted small' }, icon('shield', 'sm'), 'Sua senha não fica guardada neste aparelho.')].filter(Boolean));
       return wrap;
     }
     if (step === 'forgot') {
@@ -668,7 +745,7 @@
         if (!await confirmSheet('Sair do aplicativo?', 'Sua conta será desconectada neste aparelho.', 'Sair')) return;
         api('logout', {}).catch(() => {}); endSession(); delete document.body.dataset.role; history.replaceState(null, '', '#/home'); render();
       }, { kind: 'secondary', icon: 'logout' }),
-      h('p', { class: 'muted small center' }, 'CondoConnect · versão 2.0.0')];
+      h('p', { class: 'muted small center' }, 'CondoConnect · versão 2.1.0')];
   }
   function editProfileView() {
     const name = field('Nome completo', { autocomplete: 'name', maxlength: 190, value: user().nome || '' });

@@ -52,12 +52,25 @@ jobs:
           name: condoconnect-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+      # A release "apk-teste" não é apagada: só o arquivo do APK é trocado (o link continua o mesmo)
+      # e a tag passa a apontar para este commit. Na primeira vez, a release é criada.
+      # Link direto: https://github.com/<dono>/<repositório>/releases/download/apk-teste/CondoConnect-teste.apk
       - name: Publicar o APK em Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/CondoConnect-teste.apk"
-          gh release delete apk-teste --yes --cleanup-tag || true
-          gh release create apk-teste "$RUNNER_TEMP/CondoConnect-teste.apk" --target "$GITHUB_SHA" \
-            --title "CondoConnect APK de teste" \
-            --notes "APK de teste (Android 7+, 64 bits), ligado a http://2.24.65.149:8080/sisc-test. Conexão sem criptografia: não distribuir para moradores."
+          apk="$RUNNER_TEMP/CondoConnect-teste.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          notes="APK de teste (Android 7+, 64 bits), ligado a http://2.24.65.149:8080/sisc-test. Conexão sem criptografia: não distribuir para moradores.
+
+          Versão $(grep -o 'versionName "[^"]*"' android/app/build.gradle | cut -d'"' -f2), commit ${GITHUB_SHA::7}, gerado em $(date -u '+%d/%m/%Y %H:%M') UTC.
+          SHA-256 do APK: $(sha256sum "$apk" | cut -d' ' -f1)"
+          if gh release view apk-teste > /dev/null 2>&1; then
+            git tag -f apk-teste "$GITHUB_SHA"
+            git push -f origin refs/tags/apk-teste
+            gh release upload apk-teste "$apk" --clobber
+            gh release edit apk-teste --title "CondoConnect APK de teste" --notes "$notes"
+          else
+            gh release create apk-teste "$apk" --target "$GITHUB_SHA" --title "CondoConnect APK de teste" --notes "$notes"
+          fi
+          echo "Link direto: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/apk-teste/CondoConnect-teste.apk" >> "$GITHUB_STEP_SUMMARY"
